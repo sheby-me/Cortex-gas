@@ -197,15 +197,38 @@ export async function handleAIRequest(request: Request): Promise<Response> {
 
     parts.push({ text: mainPromptText });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: { parts },
-      config: {
-        systemInstruction: defaultSystemInstruction,
-      },
-    });
+    const candidateModels = ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-flash"];
 
-    const outputText = response.text || "No response generated.";
+    let lastError: unknown = null;
+    let responseText: string | null = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts },
+          config: {
+            systemInstruction: defaultSystemInstruction,
+          },
+        });
+        if (response.text) {
+          responseText = response.text;
+          break;
+        }
+      } catch (e: unknown) {
+        lastError = e;
+        console.warn(
+          `Gemini model ${modelName} failed, attempting next model fallback if available. Error:`,
+          e,
+        );
+      }
+    }
+
+    if (!responseText) {
+      throw lastError || new Error("All Gemini model generation attempts failed.");
+    }
+
+    const outputText = responseText;
 
     return new Response(
       JSON.stringify({
