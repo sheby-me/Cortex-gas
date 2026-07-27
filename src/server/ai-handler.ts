@@ -18,8 +18,8 @@ interface AIRequestPayload {
 
 export async function handleAIRequest(request: Request): Promise<Response> {
   if (request.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
+    return new Response(JSON.stringify({ success: false, error: "Method not allowed" }), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -28,25 +28,44 @@ export async function handleAIRequest(request: Request): Promise<Response> {
   if (!apiKey) {
     return new Response(
       JSON.stringify({
+        success: false,
         error:
-          "GEMINI_API_KEY is missing. Please configure GEMINI_API_KEY in your environment variables.",
+          "GEMINI_API_KEY is missing. Please configure GEMINI_API_KEY in your server or Vercel environment variables.",
       }),
       {
-        status: 500,
+        status: 200,
         headers: { "Content-Type": "application/json" },
       },
     );
   }
 
   try {
-    const body: AIRequestPayload = await request.json();
+    let body: AIRequestPayload;
+    try {
+      body = await request.json();
+    } catch {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "Invalid JSON request payload or file payload exceeded server capacity.",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const { prompt, toolId = "study", toolName, context, systemInstruction, files } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
-      return new Response(JSON.stringify({ error: "Prompt is required" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ success: false, error: "A prompt or study question is required." }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     const ai = new GoogleGenAI({
@@ -93,18 +112,41 @@ export async function handleAIRequest(request: Request): Promise<Response> {
     if (files && Array.isArray(files) && files.length > 0) {
       for (const file of files) {
         if (!file || !file.data) continue;
-        const cleanBase64 = file.data.includes(",") ? file.data.split(",")[1] : file.data;
+        const nameLower = (file.name || "").toLowerCase();
         let mimeType = file.type || "application/octet-stream";
 
-        // If file name ends with .pdf, .txt, .md, fix mimeType if missing or generic
-        if (file.name.toLowerCase().endsWith(".pdf")) {
+        // Deduce mimeType from extension if missing or generic
+        if (nameLower.endsWith(".pdf")) {
           mimeType = "application/pdf";
+        } else if (nameLower.endsWith(".png")) {
+          mimeType = "image/png";
+        } else if (nameLower.endsWith(".jpg") || nameLower.endsWith(".jpeg")) {
+          mimeType = "image/jpeg";
+        } else if (nameLower.endsWith(".webp")) {
+          mimeType = "image/webp";
+        } else if (nameLower.endsWith(".gif")) {
+          mimeType = "image/gif";
+        } else if (nameLower.endsWith(".mp3")) {
+          mimeType = "audio/mp3";
+        } else if (nameLower.endsWith(".wav")) {
+          mimeType = "audio/wav";
         } else if (
-          file.name.toLowerCase().endsWith(".txt") ||
-          file.name.toLowerCase().endsWith(".md")
+          nameLower.endsWith(".txt") ||
+          nameLower.endsWith(".md") ||
+          nameLower.endsWith(".js") ||
+          nameLower.endsWith(".ts") ||
+          nameLower.endsWith(".py") ||
+          nameLower.endsWith(".java") ||
+          nameLower.endsWith(".cpp") ||
+          nameLower.endsWith(".c") ||
+          nameLower.endsWith(".json") ||
+          nameLower.endsWith(".csv")
         ) {
           mimeType = "text/plain";
         }
+
+        const isDataUrl = typeof file.data === "string" && file.data.startsWith("data:");
+        const cleanBase64 = isDataUrl ? file.data.split(",")[1] || "" : file.data;
 
         // Gemini natively supports inlineData for application/pdf, image/*, audio/*
         if (
@@ -124,7 +166,7 @@ export async function handleAIRequest(request: Request): Promise<Response> {
         } else {
           // Plain text / Markdown / Source Code / CSV / JSON
           let textContent = "";
-          if (file.data.startsWith("data:")) {
+          if (isDataUrl) {
             try {
               textContent = Buffer.from(cleanBase64, "base64").toString("utf-8");
             } catch {
@@ -133,6 +175,11 @@ export async function handleAIRequest(request: Request): Promise<Response> {
           } else {
             textContent = file.data;
           }
+
+          if (textContent.length > 50000) {
+            textContent = textContent.slice(0, 50000) + "\n...[truncated long text]...";
+          }
+
           parts.push({
             text: `\n=== Attached Reference Document: ${file.name} (${mimeType}) ===\n${textContent}\n=== End of Attached Document ===\n`,
           });
@@ -176,10 +223,11 @@ export async function handleAIRequest(request: Request): Promise<Response> {
     const errorMessage = err instanceof Error ? err.message : "An unexpected AI error occurred.";
     return new Response(
       JSON.stringify({
+        success: false,
         error: `AI Generation Error: ${errorMessage}`,
       }),
       {
-        status: 500,
+        status: 200,
         headers: { "Content-Type": "application/json" },
       },
     );

@@ -9,6 +9,7 @@ interface VercelRequest {
 interface VercelResponse {
   status: (code: number) => VercelResponse;
   json: (data: unknown) => VercelResponse;
+  setHeader: (name: string, value: string) => VercelResponse;
 }
 
 export async function POST(request: Request) {
@@ -16,8 +17,8 @@ export async function POST(request: Request) {
     return await handleAIRequest(request);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Internal server error";
-    return new Response(JSON.stringify({ error: errorMessage }), {
-      status: 500,
+    return new Response(JSON.stringify({ success: false, error: errorMessage }), {
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ success: false, error: "Method not allowed" });
   }
 
   try {
@@ -44,11 +45,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       data = JSON.parse(resText);
     } catch {
-      data = { error: resText || "Server error occurred" };
+      data = { success: false, error: resText || "Server error occurred" };
     }
     return res.status(webRes.status).json(data);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Internal server error";
-    return res.status(500).json({ error: errorMessage });
+    return res.status(200).json({ success: false, error: errorMessage });
   }
 }
