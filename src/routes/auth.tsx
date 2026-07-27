@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Mail, Lock, GraduationCap, BookOpen, ArrowRight } from "lucide-react";
+import { Mail, Lock, GraduationCap, BookOpen, ArrowRight, AlertCircle } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createUserWithEmailAndPassword,
@@ -17,6 +17,7 @@ import {
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/integrations/firebase/client";
 import { toast } from "sonner";
+import { formatAuthError, validateSignIn, validateSignUp } from "@/lib/auth-errors";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -134,6 +135,7 @@ function RoleForm({ role }: { role: Role }) {
   const [bio, setBio] = useState("");
   const [credentials, setCredentials] = useState("");
   const [busy, setBusy] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const canSignup = meta.allowSignup;
 
@@ -188,6 +190,24 @@ function RoleForm({ role }: { role: Role }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setFormError(null);
+
+    if (mode === "signup" && canSignup) {
+      const val = validateSignUp({ email, password, name, role, credentials, bio });
+      if (!val.valid && val.error) {
+        setFormError(val.error);
+        toast.error(val.error);
+        return;
+      }
+    } else {
+      const val = validateSignIn(email, password);
+      if (!val.valid && val.error) {
+        setFormError(val.error);
+        toast.error(val.error);
+        return;
+      }
+    }
+
     setBusy(true);
     try {
       if (mode === "signup" && canSignup) {
@@ -233,13 +253,16 @@ function RoleForm({ role }: { role: Role }) {
         await routeAfterSignIn(cred.user.uid, cred.user.email ?? email);
       }
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message ?? "Something went wrong.");
+      const msg = formatAuthError(err);
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
   }
 
   async function handleGoogle() {
+    setFormError(null);
     setBusy(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
@@ -278,7 +301,9 @@ function RoleForm({ role }: { role: Role }) {
       }
       await routeAfterSignIn(u.uid, email);
     } catch (err: unknown) {
-      toast.error((err as { message?: string })?.message ?? "Google sign-in failed.");
+      const msg = formatAuthError(err);
+      setFormError(msg);
+      toast.error(msg);
     } finally {
       setBusy(false);
     }
@@ -363,13 +388,23 @@ function RoleForm({ role }: { role: Role }) {
           </div>
         </>
       )}
+      {formError && (
+        <div className="flex items-start gap-2.5 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+          <div className="flex-1 font-medium leading-relaxed">{formError}</div>
+        </div>
+      )}
+
       <div>
         <Label>Email</Label>
         <div className="relative mt-1.5">
           <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              if (formError) setFormError(null);
+            }}
             type="email"
             required
             className="h-11 rounded-md pl-9"
@@ -378,15 +413,22 @@ function RoleForm({ role }: { role: Role }) {
         </div>
       </div>
       <div>
-        <Label>Password</Label>
+        <Label className="flex items-center justify-between">
+          <span>Password</span>
+          {mode === "signup" && (
+            <span className="text-[11px] text-muted-foreground font-normal">Min. 8 characters</span>
+          )}
+        </Label>
         <div className="relative mt-1.5">
           <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              if (formError) setFormError(null);
+            }}
             type="password"
             required
-            minLength={8}
             className="h-11 rounded-md pl-9"
             placeholder="••••••••"
           />
@@ -404,7 +446,10 @@ function RoleForm({ role }: { role: Role }) {
               New here?{" "}
               <button
                 type="button"
-                onClick={() => setMode("signup")}
+                onClick={() => {
+                  setMode("signup");
+                  setFormError(null);
+                }}
                 className="font-semibold text-foreground underline underline-offset-4"
               >
                 Create a {meta.title.toLowerCase()} account
@@ -415,7 +460,10 @@ function RoleForm({ role }: { role: Role }) {
               Already have one?{" "}
               <button
                 type="button"
-                onClick={() => setMode("signin")}
+                onClick={() => {
+                  setMode("signin");
+                  setFormError(null);
+                }}
                 className="font-semibold text-foreground underline underline-offset-4"
               >
                 Sign in
