@@ -299,41 +299,6 @@ By combining peer learning with artificial intelligence, Cortex creates an engag
 
 ---
 
-# 🔮 Future Enhancements
-
-Future versions of Cortex may include:
-
-* Video and voice tutoring
-* Real-time collaborative whiteboard
-* AI-powered learning analytics
-* Calendar integration
-* Mobile applications (Android & iOS)
-* Multi-language AI support
-* Gamified learning challenges
-* Course creation for verified teachers
-* Automated workflows using n8n
-* AI-generated mock interviews
-* Live collaborative coding environment
-
----
-
-# 👨‍💻 Developed For
-
-This project was developed as a Final Course Project to demonstrate the integration of modern web technologies, cloud services, and Artificial Intelligence into a fully functional educational platform.
-
-The project showcases practical implementation of:
-
-* Firebase Authentication
-* Cloud Firestore
-* Google Gemini API
-* AI-Assisted Learning
-* Responsive Web Design
-* Modern React Development
-* Cloud-Based Architecture
-* User-Centred Experience Design
-
----
-
 # 📜 License
 
 This project is intended for educational and demonstration purposes.
@@ -344,3 +309,6 @@ This project is intended for educational and demonstration purposes.
 Vercel link: https://cortex-learn-d5mnd9ga0-sheby.vercel.app
 For accessing the admin panel to approve the pending tutors: 
 https://cortex-learn-d5mnd9ga0-sheby.vercel.app/admin
+Admin Accounts are created with restricted access, currently only one email is registered as admin role in firebase:
+email: admin.cortex@gmail.com
+password: cortexadmin
