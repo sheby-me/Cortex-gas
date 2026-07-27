@@ -1,11 +1,19 @@
 import { GoogleGenAI } from "@google/genai";
 
+interface AttachedFile {
+  name: string;
+  type: string;
+  size?: number;
+  data: string; // Base64 string or data URL
+}
+
 interface AIRequestPayload {
   prompt: string;
   toolId?: string;
   toolName?: string;
   context?: string;
   systemInstruction?: string;
+  files?: AttachedFile[];
 }
 
 export async function handleAIRequest(request: Request): Promise<Response> {
@@ -32,7 +40,7 @@ export async function handleAIRequest(request: Request): Promise<Response> {
 
   try {
     const body: AIRequestPayload = await request.json();
-    const { prompt, toolId = "study", toolName, context, systemInstruction } = body;
+    const { prompt, toolId = "study", toolName, context, systemInstruction, files } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return new Response(JSON.stringify({ error: "Prompt is required" }), {
@@ -79,17 +87,58 @@ export async function handleAIRequest(request: Request): Promise<Response> {
       defaultSystemInstruction += `\n\nAdditional user guidelines: ${systemInstruction}`;
     }
 
-    let contents = prompt.trim();
+    const parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+
+    // Attach reference material files (PDFs, images, notes, audio, code docs)
+    if (files && Array.isArray(files) && files.length > 0) {
+      for (const file of files) {
+        if (!file || !file.data) continue;
+        const cleanBase64 = file.data.includes(",") ? file.data.split(",")[1] : file.data;
+        const mimeType = file.type || "application/octet-stream";
+
+        // Gemini natively supports inlineData for application/pdf, image/*, audio/*
+        if (
+          mimeType.startsWith("image/") ||
+          mimeType === "application/pdf" ||
+          mimeType.startsWith("audio/")
+        ) {
+          parts.push({
+            inlineData: {
+              mimeType,
+              data: cleanBase64,
+            },
+          });
+          parts.push({
+            text: `[Attached Reference Material: ${file.name}]`,
+          });
+        } else {
+          // Plain text / Markdown / Source Code / CSV / JSON
+          let textContent = "";
+          try {
+            textContent = Buffer.from(cleanBase64, "base64").toString("utf-8");
+          } catch {
+            textContent = "[Unreadable content]";
+          }
+          parts.push({
+            text: `\n=== Attached Reference Document: ${file.name} (${mimeType}) ===\n${textContent}\n=== End of Attached Document ===\n`,
+          });
+        }
+      }
+    }
+
+    let mainPromptText = prompt.trim();
     if (context) {
-      contents = `Context / Material provided by user:\n"""\n${context}\n"""\n\nUser Question / Instruction:\n${contents}`;
+      mainPromptText = `Context / Text Material provided by user:\n"""\n${context}\n"""\n\nUser Question / Instruction:\n${mainPromptText}`;
     }
     if (toolName) {
-      contents = `[Tool Context: ${toolName}]\n${contents}`;
+      mainPromptText = `[Tool Context: ${toolName}]\n${mainPromptText}`;
     }
+
+    parts.push({ text: mainPromptText });
 
     const response = await ai.models.generateContent({
       model: "gemini-3.6-flash",
-      contents,
+      contents: { parts },
       config: {
         systemInstruction: defaultSystemInstruction,
       },
