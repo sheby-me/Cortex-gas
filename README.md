@@ -70,8 +70,9 @@
 * **Database & Auth:** Firebase Firestore (NoSQL Document Store) & Firebase Authentication
 
 ### 📦 Deployment (Vercel)
-Vercel link: cortex-learn-zeta.vercel.app
-admin panel: cortex-learn-zeta.vercel.app/admin (Note: Admin emails are registered in firestore database, not every email gets access even if u create a new admin account, once logged into admin panel, u can approve pending tutors requiring verification and add new admin emails to allowlist)
+# Vercel link: cortex-learn-zeta.vercel.app
+# admin panel: cortex-learn-zeta.vercel.app/admin 
+(Note: Admin emails are registered in firestore database, not every email gets access even if u create a new admin account, once logged into admin panel, u can approve pending tutors requiring verification and add new admin emails to allowlist)
 use the below credentials for logging into the admin account:
 admin registered email: admin.cortex@gmail.com
 password: cortexadmin
