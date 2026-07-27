@@ -86,24 +86,21 @@ function AdminLogin() {
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  async function ensureAllowlisted(emailAddr: string) {
-    const snap = await getDoc(doc(db, "admin_emails", emailAddr.toLowerCase()));
-    if (!snap.exists()) throw new Error("This email is not authorized for admin access.");
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
 
+    const cleanEmail = email.trim().toLowerCase();
+
     if (mode === "signup") {
-      const val = validateSignUp({ email, password, role: "admin" });
+      const val = validateSignUp({ email: cleanEmail, password, role: "admin" });
       if (!val.valid && val.error) {
         setFormError(val.error);
         toast.error(val.error);
         return;
       }
     } else {
-      const val = validateSignIn(email, password);
+      const val = validateSignIn(cleanEmail, password);
       if (!val.valid && val.error) {
         setFormError(val.error);
         toast.error(val.error);
@@ -113,24 +110,55 @@ function AdminLogin() {
 
     setBusy(true);
     try {
-      await ensureAllowlisted(email);
       if (mode === "signup") {
-        const cred = await createUserWithEmailAndPassword(auth, email, password);
-        await updateProfile(cred.user, { displayName: email.split("@")[0] });
+        const allAdmins = await getDocs(collection(db, "admin_emails"));
+        const allowSnap = await getDoc(doc(db, "admin_emails", cleanEmail));
+
+        // If admin_emails already has entries and this email is not allowlisted:
+        if (!allAdmins.empty && !allowSnap.exists()) {
+          throw new Error(
+            "This email is not authorized to create an admin account. An existing admin must add your email to the admin list first.",
+          );
+        }
+
+        const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+        await updateProfile(cred.user, { displayName: cleanEmail.split("@")[0] });
         await setDoc(doc(db, "users", cred.user.uid), {
           uid: cred.user.uid,
-          email,
-          displayName: email.split("@")[0],
+          email: cleanEmail,
+          displayName: cleanEmail.split("@")[0],
           role: "admin",
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
-        toast.success("Admin account created.");
+        await setDoc(
+          doc(db, "admin_emails", cleanEmail),
+          { email: cleanEmail, createdAt: serverTimestamp() },
+          { merge: true },
+        );
+        toast.success("Admin account created successfully.");
       } else {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
+        const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        const allowSnap = await getDoc(doc(db, "admin_emails", cleanEmail));
+        const userSnap = await getDoc(doc(db, "users", cred.user.uid));
+        const userRole = userSnap.data()?.role;
+        const allAdmins = await getDocs(collection(db, "admin_emails"));
+
+        const isAuthorized = allowSnap.exists() || userRole === "admin" || allAdmins.empty;
+
+        if (!isAuthorized) {
+          await fbSignOut(auth);
+          throw new Error("This email is not authorized for admin access.");
+        }
+
         await setDoc(
           doc(db, "users", cred.user.uid),
-          { role: "admin", email, updatedAt: serverTimestamp() },
+          { role: "admin", email: cleanEmail, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+        await setDoc(
+          doc(db, "admin_emails", cleanEmail),
+          { email: cleanEmail, createdAt: serverTimestamp() },
           { merge: true },
         );
       }
@@ -302,12 +330,16 @@ function AdminPanel() {
     );
   }
   async function loadAdmins() {
-    const snap = await getDocs(query(collection(db, "admin_emails"), orderBy("createdAt", "desc")));
-    setAdmins(
-      snap.docs.map((d) => ({
-        email: ((d.data() as Record<string, unknown>).email as string) ?? d.id,
-      })),
-    );
+    try {
+      const snap = await getDocs(collection(db, "admin_emails"));
+      setAdmins(
+        snap.docs.map((d) => ({
+          email: ((d.data() as Record<string, unknown>).email as string) ?? d.id,
+        })),
+      );
+    } catch (e: unknown) {
+      console.error("Failed to load admin list:", e);
+    }
   }
   useEffect(() => {
     loadApps();

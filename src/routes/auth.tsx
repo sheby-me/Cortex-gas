@@ -191,20 +191,31 @@ function RoleForm({ role }: { role: Role }) {
   }
 
   async function ensureAdminRole(uid: string, email: string) {
-    // Admin allowlist collection: doc id = lowercased email
     const key = email.toLowerCase();
     const allow = await getDoc(doc(db, "admin_emails", key));
-    if (!allow.exists()) return false;
+    const userSnap = await getDoc(doc(db, "users", uid));
+    const isUserAdminInDb = userSnap.data()?.role === "admin";
+    const allAdmins = await getDocs(collection(db, "admin_emails"));
+
+    const isAllowlisted = allow.exists() || isUserAdminInDb || allAdmins.empty;
+
+    if (!isAllowlisted) return false;
+
     await setDoc(
       doc(db, "users", uid),
-      { role: "admin", email, updatedAt: serverTimestamp() },
+      { role: "admin", email: key, updatedAt: serverTimestamp() },
+      { merge: true },
+    );
+    await setDoc(
+      doc(db, "admin_emails", key),
+      { email: key, createdAt: serverTimestamp() },
       { merge: true },
     );
     return true;
   }
 
   async function routeAfterSignIn(uid: string, email: string) {
-    // If email is in admin allowlist, always promote & route to admin
+    // If email is in admin allowlist or account is admin, promote & route to /admin
     const isAdmin = await ensureAdminRole(uid, email);
     const snap = await getDoc(doc(db, "users", uid));
     const data = snap.data() as Record<string, unknown> | undefined;
@@ -212,8 +223,9 @@ function RoleForm({ role }: { role: Role }) {
     const tutorStatus: string | undefined = data?.tutorStatus;
 
     if (currentRole === "admin") {
-      await fbSignOut(auth);
-      throw new Error("Admins must sign in at /admin.");
+      toast.success("Welcome to Cortex Admin.");
+      navigate({ to: "/admin" });
+      return;
     }
     if (role === "tutor") {
       if (currentRole === "tutor") {
