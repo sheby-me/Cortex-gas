@@ -94,7 +94,17 @@ export async function handleAIRequest(request: Request): Promise<Response> {
       for (const file of files) {
         if (!file || !file.data) continue;
         const cleanBase64 = file.data.includes(",") ? file.data.split(",")[1] : file.data;
-        const mimeType = file.type || "application/octet-stream";
+        let mimeType = file.type || "application/octet-stream";
+
+        // If file name ends with .pdf, .txt, .md, fix mimeType if missing or generic
+        if (file.name.toLowerCase().endsWith(".pdf")) {
+          mimeType = "application/pdf";
+        } else if (
+          file.name.toLowerCase().endsWith(".txt") ||
+          file.name.toLowerCase().endsWith(".md")
+        ) {
+          mimeType = "text/plain";
+        }
 
         // Gemini natively supports inlineData for application/pdf, image/*, audio/*
         if (
@@ -137,8 +147,8 @@ export async function handleAIRequest(request: Request): Promise<Response> {
     parts.push({ text: mainPromptText });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: { parts },
+      model: "gemini-2.5-flash",
+      contents: parts,
       config: {
         systemInstruction: defaultSystemInstruction,
       },
