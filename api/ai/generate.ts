@@ -1,4 +1,4 @@
-import { handleAIRequest } from "../../src/server/ai-handler";
+import { handleAIRequest } from "../../src/server/ai-handler.js";
 
 interface VercelRequest {
   method?: string;
