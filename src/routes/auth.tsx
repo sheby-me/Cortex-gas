@@ -28,7 +28,7 @@ import {
   signOut as fbSignOut,
   updateProfile,
 } from "firebase/auth";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/integrations/firebase/client";
 import { toast } from "sonner";
 import { formatAuthError, validateSignIn, validateSignUp } from "@/lib/auth-errors";
