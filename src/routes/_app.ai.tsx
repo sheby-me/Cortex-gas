@@ -109,8 +109,32 @@ export function AiPage() {
     if (fileArray.length === 0) return;
 
     fileArray.forEach((file) => {
-      if (file.size > 20 * 1024 * 1024) {
-        toast.error(`File "${file.name}" exceeds the 20MB limit.`);
+      const fileNameLower = file.name.toLowerCase();
+      const isTextFile =
+        file.type.startsWith("text/") ||
+        fileNameLower.endsWith(".txt") ||
+        fileNameLower.endsWith(".md") ||
+        fileNameLower.endsWith(".js") ||
+        fileNameLower.endsWith(".ts") ||
+        fileNameLower.endsWith(".py") ||
+        fileNameLower.endsWith(".java") ||
+        fileNameLower.endsWith(".cpp") ||
+        fileNameLower.endsWith(".c") ||
+        fileNameLower.endsWith(".json") ||
+        fileNameLower.endsWith(".csv") ||
+        fileNameLower.endsWith(".html") ||
+        fileNameLower.endsWith(".css");
+
+      // For binary files (PDFs/Images), enforce 3.5MB limit for Vercel serverless payload capacity
+      if (!isTextFile && file.size > 3.5 * 1024 * 1024) {
+        toast.error(
+          `File "${file.name}" is ${(file.size / (1024 * 1024)).toFixed(1)}MB. Max limit for PDFs/Images is 3.5MB on Vercel.`,
+        );
+        return;
+      }
+
+      if (isTextFile && file.size > 10 * 1024 * 1024) {
+        toast.error(`Text document "${file.name}" exceeds 10MB limit.`);
         return;
       }
 
@@ -120,14 +144,19 @@ export function AiPage() {
         const newFile: AttachedFile = {
           id: Math.random().toString(36).substring(2, 9),
           name: file.name,
-          type: file.type || "application/octet-stream",
+          type: isTextFile ? "text/plain" : file.type || "application/octet-stream",
           size: file.size,
           data: result,
         };
         setAttachedFiles((prev) => [...prev, newFile]);
         toast.success(`Attached "${file.name}" as reference material`);
       };
-      reader.readAsDataURL(file);
+
+      if (isTextFile) {
+        reader.readAsText(file);
+      } else {
+        reader.readAsDataURL(file);
+      }
     });
   };
 
@@ -197,7 +226,15 @@ export function AiPage() {
         }),
       });
 
-      const data = await res.json();
+      const resText = await res.text();
+      let data: { success?: boolean; error?: string; text?: string } = {};
+      try {
+        data = JSON.parse(resText);
+      } catch {
+        throw new Error(
+          `Server returned non-JSON error (${res.status}). If you attached large files, try attaching a smaller file or text notes.`,
+        );
+      }
 
       if (!res.ok || !data.success) {
         throw new Error(data.error || "Failed to generate AI response.");

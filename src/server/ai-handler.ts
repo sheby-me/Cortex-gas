@@ -124,10 +124,14 @@ export async function handleAIRequest(request: Request): Promise<Response> {
         } else {
           // Plain text / Markdown / Source Code / CSV / JSON
           let textContent = "";
-          try {
-            textContent = Buffer.from(cleanBase64, "base64").toString("utf-8");
-          } catch {
-            textContent = "[Unreadable content]";
+          if (file.data.startsWith("data:")) {
+            try {
+              textContent = Buffer.from(cleanBase64, "base64").toString("utf-8");
+            } catch {
+              textContent = file.data;
+            }
+          } else {
+            textContent = file.data;
           }
           parts.push({
             text: `\n=== Attached Reference Document: ${file.name} (${mimeType}) ===\n${textContent}\n=== End of Attached Document ===\n`,
@@ -147,8 +151,8 @@ export async function handleAIRequest(request: Request): Promise<Response> {
     parts.push({ text: mainPromptText });
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: parts,
+      model: "gemini-3.6-flash",
+      contents: { parts },
       config: {
         systemInstruction: defaultSystemInstruction,
       },

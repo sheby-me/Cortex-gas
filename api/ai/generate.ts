@@ -12,7 +12,15 @@ interface VercelResponse {
 }
 
 export async function POST(request: Request) {
-  return handleAIRequest(request);
+  try {
+    return await handleAIRequest(request);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : "Internal server error";
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -21,16 +29,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    const bodyString = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
     const webReq = new Request("http://localhost/api/ai/generate", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: typeof req.body === "string" ? req.body : JSON.stringify(req.body || {}),
+      body: bodyString,
     });
 
     const webRes = await handleAIRequest(webReq);
-    const data = await webRes.json();
+    const resText = await webRes.text();
+    let data: unknown;
+    try {
+      data = JSON.parse(resText);
+    } catch {
+      data = { error: resText || "Server error occurred" };
+    }
     return res.status(webRes.status).json(data);
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Internal server error";
