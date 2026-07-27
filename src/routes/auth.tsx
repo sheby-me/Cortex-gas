@@ -5,7 +5,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Mail, Lock, GraduationCap, BookOpen, ArrowRight, AlertCircle } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  GraduationCap,
+  BookOpen,
+  ArrowRight,
+  AlertCircle,
+  Upload,
+  FileCheck,
+  FileText,
+  MessageSquare,
+  Video,
+  Coins,
+  X,
+} from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createUserWithEmailAndPassword,
@@ -134,10 +148,47 @@ function RoleForm({ role }: { role: Role }) {
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [credentials, setCredentials] = useState("");
+
+  // Degree proof state
+  const [degreeProof, setDegreeProof] = useState<{
+    name: string;
+    type: string;
+    size: number;
+    data: string;
+  } | null>(null);
+
+  // Service pricing rates
+  const [materialsCredits, setMaterialsCredits] = useState<string>("15");
+  const [asyncQaCredits, setAsyncQaCredits] = useState<string>("25");
+  const [zoomCredits, setZoomCredits] = useState<string>("50");
+
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const canSignup = meta.allowSignup;
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Degree proof document should not exceed 5MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      setDegreeProof({
+        name: file.name,
+        type: file.type || "application/pdf",
+        size: file.size,
+        data: result,
+      });
+      toast.success(`Attached "${file.name}" as degree proof`);
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function ensureAdminRole(uid: string, email: string) {
     // Admin allowlist collection: doc id = lowercased email
@@ -199,6 +250,31 @@ function RoleForm({ role }: { role: Role }) {
         toast.error(val.error);
         return;
       }
+
+      if (role === "tutor") {
+        if (!degreeProof) {
+          const err = "Please upload your degree proof or qualification document.";
+          setFormError(err);
+          toast.error(err);
+          return;
+        }
+        const matNum = Number(materialsCredits);
+        const asyncNum = Number(asyncQaCredits);
+        const zoomNum = Number(zoomCredits);
+        if (
+          isNaN(matNum) ||
+          matNum < 1 ||
+          isNaN(asyncNum) ||
+          asyncNum < 1 ||
+          isNaN(zoomNum) ||
+          zoomNum < 1
+        ) {
+          const err = "Please enter valid credit amounts for all services.";
+          setFormError(err);
+          toast.error(err);
+          return;
+        }
+      }
     } else {
       const val = validateSignIn(email, password);
       if (!val.valid && val.error) {
@@ -236,10 +312,18 @@ function RoleForm({ role }: { role: Role }) {
             email,
             bio,
             credentials,
+            degreeProof,
+            rates: {
+              materials: Number(materialsCredits) || 15,
+              asyncQa: Number(asyncQaCredits) || 25,
+              zoomMeeting: Number(zoomCredits) || 50,
+            },
             status: "pending",
             createdAt: serverTimestamp(),
           });
-          toast.success("Application submitted — an admin will review it shortly.");
+          toast.success(
+            "Application submitted — an admin will review your qualification proof shortly.",
+          );
           navigate({ to: "/pending" });
         } else if (isAdminEmail) {
           toast.success("Admin account ready.");
@@ -363,15 +447,16 @@ function RoleForm({ role }: { role: Role }) {
       {mode === "signup" && role === "tutor" && (
         <>
           <div>
-            <Label>Credentials</Label>
+            <Label>Credentials & Qualifications</Label>
             <Input
               value={credentials}
               onChange={(e) => setCredentials(e.target.value)}
               className="mt-1.5 h-11 rounded-md"
-              placeholder="e.g. MSc Physics, 5 yrs tutoring"
+              placeholder="e.g. MSc Physics, BS Computer Science"
               required
             />
           </div>
+
           <div>
             <Label>Short bio</Label>
             <Textarea
@@ -379,12 +464,141 @@ function RoleForm({ role }: { role: Role }) {
               onChange={(e) => setBio(e.target.value)}
               className="mt-1.5 rounded-md"
               placeholder="What you teach and how you help students"
-              rows={3}
+              rows={2}
               required
             />
           </div>
-          <div className="rounded-md border border-border bg-secondary p-3 text-xs text-muted-foreground">
-            Tutor accounts require admin verification before you can access the Teacher Studio.
+
+          {/* Degree Proof Upload Section */}
+          <div className="rounded-lg border border-border p-3.5 bg-card/50 space-y-2">
+            <Label className="flex items-center gap-1.5 text-xs font-semibold">
+              <FileCheck className="h-4 w-4 text-primary" />
+              Degree Proof / Qualification Document
+              <span className="text-destructive">*</span>
+            </Label>
+            <p className="text-[11px] text-muted-foreground">
+              Upload a clear photo or PDF of your degree, diploma, or qualification certificate for
+              admin approval.
+            </p>
+
+            {degreeProof ? (
+              <div className="flex items-center justify-between rounded-md border border-primary/30 bg-primary/5 p-2.5 text-xs">
+                <div className="flex items-center gap-2 min-w-0 pr-2">
+                  <FileText className="h-4 w-4 shrink-0 text-primary" />
+                  <div className="truncate font-medium text-foreground">{degreeProof.name}</div>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    ({(degreeProof.size / 1024).toFixed(0)} KB)
+                  </span>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDegreeProof(null)}
+                  className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : (
+              <label className="flex flex-col items-center justify-center rounded-md border border-dashed border-border p-4 text-center cursor-pointer hover:bg-secondary/50 transition-colors">
+                <Upload className="h-5 w-5 text-muted-foreground mb-1" />
+                <span className="text-xs font-medium text-foreground">
+                  Click to upload Degree Proof
+                </span>
+                <span className="text-[10px] text-muted-foreground mt-0.5">
+                  Supports PDF, PNG, JPG (Max 5MB)
+                </span>
+                <input
+                  type="file"
+                  accept="image/*,.pdf,.doc,.docx"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
+          </div>
+
+          {/* Service Pricing Credits Section */}
+          <div className="rounded-lg border border-border p-3.5 bg-card/50 space-y-3">
+            <div>
+              <Label className="flex items-center gap-1.5 text-xs font-semibold">
+                <Coins className="h-4 w-4 text-amber-500" />
+                Your Service Credit Rates
+              </Label>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Set how many credits students must spend for each service you offer:
+              </p>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div>
+                <Label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <FileText className="h-3.5 w-3.5 text-primary" />
+                  Materials (Notes / Guides / Slides)
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={materialsCredits}
+                    onChange={(e) => setMaterialsCredits(e.target.value)}
+                    className="h-9 pr-16 font-mono text-xs"
+                    placeholder="15"
+                    required
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+                    credits
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <Label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                  Async Q&A for 30 Mins
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={asyncQaCredits}
+                    onChange={(e) => setAsyncQaCredits(e.target.value)}
+                    className="h-9 pr-16 font-mono text-xs"
+                    placeholder="25"
+                    required
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+                    credits
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <Label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Video className="h-3.5 w-3.5 text-primary" />
+                  Zoom Meeting of 45 Mins
+                </Label>
+                <div className="relative mt-1">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={zoomCredits}
+                    onChange={(e) => setZoomCredits(e.target.value)}
+                    className="h-9 pr-16 font-mono text-xs"
+                    placeholder="50"
+                    required
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground font-medium">
+                    credits
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-border bg-secondary p-2.5 text-[11px] text-muted-foreground leading-relaxed">
+            Admin verification is required before your profile and services become active on Cortex.
           </div>
         </>
       )}
