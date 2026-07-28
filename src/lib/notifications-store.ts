@@ -34,6 +34,15 @@ export interface CortexNotification {
     role?: string;
     degreeOrStream?: string;
   };
+  toUser?: {
+    uid: string;
+    username: string;
+    displayName: string;
+    avatarUrl: string;
+    institution?: string;
+    role?: string;
+    degreeOrStream?: string;
+  };
   requestStatus?: "pending" | "accepted" | "declined";
   customNote?: string;
   actionUrl?: string;
@@ -55,7 +64,7 @@ const INITIAL_SEED_NOTIFICATIONS: CortexNotification[] = [
     id: "notif_seed_1",
     type: "buddy_request",
     title: "Study Buddy Request",
-    text: "Aditi Sharma (@aditi_sharma) sent you a connection request.",
+    text: "Aditi Sharma (@aditi_sharma) sent you a study buddy request.",
     time: "10m ago",
     timestamp: Date.now() - 1000 * 60 * 10,
     read: false,
@@ -68,6 +77,16 @@ const INITIAL_SEED_NOTIFICATIONS: CortexNotification[] = [
       role: "student",
       degreeOrStream: "BS Computer Science",
     },
+    toUser: {
+      uid: "demo_user_1",
+      username: "alex_morgan",
+      displayName: "Alex Morgan",
+      avatarUrl:
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+      institution: "Stanford University",
+      role: "student",
+      degreeOrStream: "BS Computer Science & AI",
+    },
     requestStatus: "pending",
     customNote:
       "Hey Alex! Saw we both study Data Structures & Algorithms. Let's team up for midterms & practice LeetCode together!",
@@ -76,7 +95,7 @@ const INITIAL_SEED_NOTIFICATIONS: CortexNotification[] = [
     id: "notif_seed_2",
     type: "buddy_request",
     title: "Study Buddy Request",
-    text: "Rahul Verma (@rahul_verma) sent you a connection request.",
+    text: "Rahul Verma (@rahul_verma) sent you a study buddy request.",
     time: "45m ago",
     timestamp: Date.now() - 1000 * 60 * 45,
     read: false,
@@ -89,6 +108,16 @@ const INITIAL_SEED_NOTIFICATIONS: CortexNotification[] = [
       institution: "Stanford University",
       role: "student",
       degreeOrStream: "BS Data Science",
+    },
+    toUser: {
+      uid: "demo_user_1",
+      username: "alex_morgan",
+      displayName: "Alex Morgan",
+      avatarUrl:
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+      institution: "Stanford University",
+      role: "student",
+      degreeOrStream: "BS Computer Science & AI",
     },
     requestStatus: "pending",
     customNote:
@@ -229,6 +258,26 @@ export function clearAllNotifications(): void {
 }
 
 /**
+ * Check if a pending buddy request exists between two users
+ */
+export function hasPendingBuddyRequest(uid1: string, uid2OrHandle: string): boolean {
+  const notifs = getNotifications();
+  const handle = cleanHandle(uid2OrHandle);
+  return notifs.some((n) => {
+    if (n.type !== "buddy_request" || n.requestStatus !== "pending") return false;
+    const isFrom1 = n.fromUser?.uid === uid1;
+    const isFrom2 =
+      n.fromUser?.uid === uid2OrHandle || cleanHandle(n.fromUser?.username || "") === handle;
+    const isTo1 =
+      n.toUser?.uid === uid1 || cleanHandle(n.toUser?.username || "") === cleanHandle(uid1);
+    const isTo2 =
+      n.toUser?.uid === uid2OrHandle || cleanHandle(n.toUser?.username || "") === handle;
+
+    return (isFrom1 && isTo2) || (isFrom2 && isTo1);
+  });
+}
+
+/**
  * Send a Buddy Request to a target user via UID or @username handle
  */
 export function sendBuddyRequest(params: {
@@ -261,7 +310,7 @@ export function sendBuddyRequest(params: {
 
   // If not found, create a stub record in network if input looks like a valid ID/handle
   if (!targetUser) {
-    if (handle.length >= 3) {
+    if (handle.length >= 2) {
       const isCustomId = rawInput.startsWith("user_") || rawInput.startsWith("uid_");
       const displayName = isCustomId
         ? `Learner (${rawInput.slice(0, 8)})`
@@ -285,44 +334,6 @@ export function sendBuddyRequest(params: {
     }
   }
 
-  // Prevent sending request to oneself
-  if (
-    senderProfile &&
-    (targetUser.uid === senderProfile.uid ||
-      cleanHandle(targetUser.username) === cleanHandle(senderProfile.username || ""))
-  ) {
-    return { success: false, message: "You cannot send a buddy request to yourself." };
-  }
-
-  // Check if already connected
-  if (isConnectedBuddy(targetUser.uid)) {
-    return {
-      success: false,
-      message: `You are already connected as Study Buddies with ${targetUser.displayName} (@${targetUser.username}).`,
-      targetUser,
-    };
-  }
-
-  const existingNotifs = getNotifications();
-
-  // Check if a pending request already exists for this target
-  const pending = existingNotifs.find(
-    (n) =>
-      n.type === "buddy_request" &&
-      n.fromUser?.uid === targetUser?.uid &&
-      n.requestStatus === "pending",
-  );
-
-  if (pending) {
-    return {
-      success: true,
-      message: `A buddy request with ${targetUser.displayName} (@${targetUser.username}) is already pending! Check your notifications.`,
-      targetUser,
-      notification: pending,
-    };
-  }
-
-  // Build sender profile object
   const senderInfo = {
     uid: senderProfile?.uid || "demo_user_1",
     username: senderProfile?.username || "alex_morgan",
@@ -335,16 +346,75 @@ export function sendBuddyRequest(params: {
     degreeOrStream: senderProfile?.degreeOrStream || "BS Computer Science & AI",
   };
 
-  // Create new notification record
+  // Prevent sending request to oneself
+  if (
+    targetUser.uid === senderInfo.uid ||
+    cleanHandle(targetUser.username) === cleanHandle(senderInfo.username)
+  ) {
+    return { success: false, message: "You cannot send a buddy request to yourself." };
+  }
+
+  // Check if already connected
+  if (isConnectedBuddy(targetUser.uid) || isConnectedBuddy(targetUser.username)) {
+    return {
+      success: false,
+      message: `You are already connected as Study Buddies with ${targetUser.displayName} (@${targetUser.username}).`,
+      targetUser,
+    };
+  }
+
+  const existingNotifs = getNotifications();
+
+  // Check if a pending request already exists for this target
+  const pending = existingNotifs.find((n) => {
+    if (n.type !== "buddy_request" || n.requestStatus !== "pending") return false;
+    const isFromSender =
+      n.fromUser?.uid === senderInfo.uid ||
+      cleanHandle(n.fromUser?.username || "") === cleanHandle(senderInfo.username);
+    const isToSender =
+      n.toUser?.uid === senderInfo.uid ||
+      cleanHandle(n.toUser?.username || "") === cleanHandle(senderInfo.username);
+
+    const isFromTarget =
+      n.fromUser?.uid === targetUser?.uid ||
+      cleanHandle(n.fromUser?.username || "") === cleanHandle(targetUser?.username || "");
+    const isToTarget =
+      n.toUser?.uid === targetUser?.uid ||
+      cleanHandle(n.toUser?.username || "") === cleanHandle(targetUser?.username || "");
+
+    return (isFromSender && isToTarget) || (isFromTarget && isToSender);
+  });
+
+  if (pending) {
+    return {
+      success: true,
+      message: `A buddy request with ${targetUser.displayName} (@${targetUser.username}) is already pending!`,
+      targetUser,
+      notification: pending,
+    };
+  }
+
+  // Create new notification record:
+  // fromUser = SENDER (senderInfo)
+  // toUser = RECIPIENT (targetUser)
   const newNotif: CortexNotification = {
     id: `notif_req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     type: "buddy_request",
-    title: "Outgoing Buddy Request",
-    text: `Buddy request sent to ${targetUser.displayName} (@${targetUser.username}).`,
+    title: "Study Buddy Request",
+    text: `@${senderInfo.username} (${senderInfo.displayName}) sent you a study buddy request.`,
     time: "Just now",
     timestamp: Date.now(),
     read: false,
     fromUser: {
+      uid: senderInfo.uid,
+      username: senderInfo.username,
+      displayName: senderInfo.displayName,
+      avatarUrl: senderInfo.avatarUrl,
+      institution: senderInfo.institution,
+      role: senderInfo.role,
+      degreeOrStream: senderInfo.degreeOrStream,
+    },
+    toUser: {
       uid: targetUser.uid,
       username: targetUser.username,
       displayName: targetUser.displayName,
@@ -354,7 +424,8 @@ export function sendBuddyRequest(params: {
       degreeOrStream: targetUser.degreeOrStream,
     },
     requestStatus: "pending",
-    customNote: customNote?.trim() || `Sent buddy request from @${senderInfo.username}`,
+    customNote:
+      customNote?.trim() || `Hi ${targetUser.displayName}! Let's team up as study buddies.`,
   };
 
   saveNotifications([newNotif, ...existingNotifs]);
@@ -389,15 +460,18 @@ export function respondToBuddyRequest(
   }
 
   if (accept) {
-    // Add to connected buddies
+    // Add both to connected buddies
     addConnectedBuddy(fromUser.uid);
+    if (targetNotif.toUser?.uid) {
+      addConnectedBuddy(targetNotif.toUser.uid);
+    }
 
     // Update current request status
     notifs[index] = {
       ...targetNotif,
       requestStatus: "accepted",
       read: true,
-      text: `You accepted ${fromUser.displayName}'s (@${fromUser.username}) study buddy request.`,
+      text: `Accepted study buddy request from ${fromUser.displayName} (@${fromUser.username}).`,
     };
 
     // Create follow-up notification
@@ -410,6 +484,7 @@ export function respondToBuddyRequest(
       timestamp: Date.now(),
       read: false,
       fromUser,
+      toUser: targetNotif.toUser,
       requestStatus: "accepted",
     };
 

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,10 +37,15 @@ import {
   UserPlus,
   AtSign,
 } from "lucide-react";
-import { buddies as initialBuddies } from "@/lib/mock-data";
 import { useAuth, type GradeLevel } from "@/hooks/use-auth";
 import { toast } from "sonner";
-import { sendBuddyRequest } from "@/lib/notifications-store";
+import {
+  sendBuddyRequest,
+  isConnectedBuddy,
+  hasPendingBuddyRequest,
+  NOTIFICATION_EVENT,
+} from "@/lib/notifications-store";
+import { getAllNetworkUsers, cleanHandle } from "@/lib/user-network";
 import { SendBuddyModal } from "@/components/send-buddy-modal";
 
 export const Route = createFileRoute("/_app/buddy")({
@@ -72,64 +77,71 @@ interface BuddyItem {
   gradeLevel?: GradeLevel | string;
   isBatchmate?: boolean;
   requested?: boolean;
+  isConnected?: boolean;
 }
 
 export function BuddyPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
 
-  const [buddyList, setBuddyList] = useState<BuddyItem[]>(() => {
-    const userUni = (profile.institution || "Stanford University").toLowerCase();
-    return [
-      {
-        id: "b_1",
-        name: "Elena Rostova",
-        username: "elena_rostova",
-        avatar:
-          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-        uni: profile.institution || "Stanford University",
-        semesterOrYear: profile.semesterOrYear || "Semester 4",
-        degreeOrStream: profile.degreeOrStream || "BS Computer Science",
-        tz: "UTC-5 (EST)",
-        topic: "Operating Systems & Concurrency",
-        exam: "Nov 18 Midterm",
-        match: 98,
-        gradeLevel: (profile.gradeLevel as GradeLevel) || "Undergraduate",
-        isBatchmate: true,
-        requested: false,
-      },
-      {
-        id: "b_2",
-        name: "Rahul Verma",
-        username: "rahul_verma",
-        avatar:
-          "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-        uni: profile.institution || "Stanford University",
-        semesterOrYear: "Semester 4",
-        degreeOrStream: "BS Computer Science & AI",
-        tz: "UTC-5 (EST)",
-        topic: "Linear Algebra & Neural Nets",
-        exam: "Dec 02 Final",
-        match: 95,
-        gradeLevel: "Undergraduate",
-        isBatchmate: true,
-        requested: false,
-      },
-      ...initialBuddies.map((b, idx) => {
-        const uHandles = ["marcus_a", "priya_sharma", "sophia_chen", "david_kim", "aisha_khan"];
+  const [buddyList, setBuddyList] = useState<BuddyItem[]>([]);
+
+  const loadBuddyList = useCallback(() => {
+    const networkUsers = getAllNetworkUsers();
+    const currentUid = profile?.uid || "demo_user_1";
+    const currentHandle = profile?.username || "alex_morgan";
+    const userUni = (profile?.institution || "Stanford University").toLowerCase();
+
+    const mapped: BuddyItem[] = networkUsers
+      .filter((u) => u.uid !== currentUid && cleanHandle(u.username) !== cleanHandle(currentHandle))
+      .map((u) => {
+        const connected = isConnectedBuddy(u.uid) || isConnectedBuddy(u.username);
+        const pending =
+          hasPendingBuddyRequest(currentUid, u.uid) ||
+          hasPendingBuddyRequest(currentUid, u.username);
+
+        let topic = "General Studies & Coursework";
+        if (u.learn && u.learn.length > 0) {
+          topic = `Learning: ${u.learn.join(", ")}`;
+        } else if (u.teach && u.teach.length > 0) {
+          topic = `Teaching: ${u.teach.join(", ")}`;
+        } else if (u.about) {
+          topic = u.about.length > 60 ? u.about.slice(0, 60) + "..." : u.about;
+        }
+
         return {
-          ...b,
-          username: uHandles[idx % uHandles.length],
-          semesterOrYear: idx % 2 === 0 ? "Semester 4" : "Class 10 / Matric",
-          degreeOrStream: idx % 2 === 0 ? "BS Data Science" : "Science Stream",
-          gradeLevel: idx % 2 === 0 ? "Undergraduate" : "Matric",
-          isBatchmate:
-            b.uni.toLowerCase().includes(userUni) || userUni.includes(b.uni.toLowerCase()),
-          requested: false,
+          id: u.uid,
+          name: u.displayName,
+          username: u.username,
+          avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${u.username}`,
+          uni: u.institution || "Cortex Global Network",
+          semesterOrYear: u.gradeLevel || "Semester 4",
+          degreeOrStream: u.degreeOrStream || (u.role === "tutor" ? "Verified Tutor" : "Student"),
+          tz: "UTC-5 (EST)",
+          topic,
+          exam: u.role === "tutor" ? "Expert Tutor" : "Midterms & Finals",
+          match: u.match || Math.floor(82 + (u.uid.charCodeAt(0) % 17)),
+          gradeLevel: u.gradeLevel || "Undergraduate",
+          isBatchmate: Boolean(
+            u.institution &&
+            (u.institution.toLowerCase().includes(userUni) ||
+              userUni.includes(u.institution.toLowerCase())),
+          ),
+          requested: pending,
+          isConnected: connected,
         };
-      }),
-    ];
-  });
+      });
+
+    setBuddyList(mapped);
+  }, [profile]);
+
+  useEffect(() => {
+    loadBuddyList();
+    if (typeof window !== "undefined") {
+      window.addEventListener(NOTIFICATION_EVENT, loadBuddyList);
+      return () => window.removeEventListener(NOTIFICATION_EVENT, loadBuddyList);
+    }
+  }, [loadBuddyList]);
 
   // Filter States
   const [searchTopic, setSearchTopic] = useState("");
@@ -192,25 +204,25 @@ export function BuddyPage() {
   };
 
   const handleToggleTeamUp = (buddy: BuddyItem) => {
-    const nextState = !buddy.requested;
-    if (nextState) {
-      const res = sendBuddyRequest({
-        targetUidOrHandle: buddy.username || buddy.id,
-        customNote: `Sent buddy request for studying ${buddy.topic}`,
-        senderProfile: profile,
-      });
-      if (res.success) {
-        toast.success(res.message);
-      } else {
-        toast.info(res.message);
-      }
-    } else {
-      toast.info(`Request to ${buddy.name} cancelled.`);
+    if (buddy.isConnected) {
+      toast.info(
+        `You are already connected as Study Buddies with ${buddy.name} (@${buddy.username}).`,
+      );
+      return;
     }
 
-    setBuddyList((prev) =>
-      prev.map((b) => (b.id === buddy.id ? { ...b, requested: nextState } : b)),
-    );
+    const res = sendBuddyRequest({
+      targetUidOrHandle: buddy.username || buddy.id,
+      customNote: `Hi ${buddy.name}! I'd like to team up for study sessions on ${buddy.topic}`,
+      senderProfile: profile,
+    });
+
+    if (res.success) {
+      toast.success(res.message);
+    } else {
+      toast.info(res.message);
+    }
+    loadBuddyList();
   };
 
   const handleSendQuickMessage = (e: React.FormEvent) => {
@@ -224,13 +236,17 @@ export function BuddyPage() {
   };
 
   const filteredBuddies = buddyList.filter((b) => {
-    const q = searchTopic.toLowerCase().trim();
+    const rawQ = searchTopic.toLowerCase().trim();
+    const q = rawQ.replace(/^@/, "");
+
     const matchesTopic =
-      !q ||
-      b.topic.toLowerCase().includes(q) ||
-      b.name.toLowerCase().includes(q) ||
-      (b.username && b.username.toLowerCase().includes(q.replace(/^@/, ""))) ||
-      b.uni.toLowerCase().includes(q);
+      !rawQ ||
+      b.topic.toLowerCase().includes(rawQ) ||
+      b.name.toLowerCase().includes(rawQ) ||
+      (b.username && cleanHandle(b.username).includes(q)) ||
+      b.id.toLowerCase().includes(q) ||
+      b.uni.toLowerCase().includes(rawQ) ||
+      (b.degreeOrStream && b.degreeOrStream.toLowerCase().includes(rawQ));
 
     const matchesLevel =
       levelFilter === "all" ||
@@ -438,20 +454,30 @@ export function BuddyPage() {
                 </Button>
                 <Button
                   onClick={() => handleToggleTeamUp(b)}
-                  variant={b.requested ? "secondary" : "default"}
+                  variant={b.isConnected || b.requested ? "secondary" : "default"}
                   className={`rounded-xl transition ${
-                    b.requested
+                    b.isConnected
                       ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                      : "bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
+                      : b.requested
+                        ? "bg-amber-500/10 text-amber-600 border border-amber-500/30"
+                        : "bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
                   }`}
                 >
-                  {b.requested ? (
+                  {b.isConnected ? (
                     <>
                       <Check className="mr-1.5 h-4 w-4 text-emerald-600" />
-                      Teamed Up
+                      Connected
+                    </>
+                  ) : b.requested ? (
+                    <>
+                      <Clock className="mr-1.5 h-4 w-4 text-amber-600" />
+                      Request Sent
                     </>
                   ) : (
-                    "Team Up"
+                    <>
+                      <UserPlus className="mr-1.5 h-4 w-4" />
+                      Team Up
+                    </>
                   )}
                 </Button>
               </div>

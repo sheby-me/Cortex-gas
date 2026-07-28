@@ -55,7 +55,8 @@ export const INITIAL_NETWORK_USERS: NetworkUser[] = [
     avatarUrl: "https://i.pravatar.cc/150?img=15",
     institution: "University of Tokyo",
     degreeOrStream: "MS Systems Engineering",
-    about: "Kernel developer and operating systems enthusiast. Happy to help with concurrency & deadlocks.",
+    about:
+      "Kernel developer and operating systems enthusiast. Happy to help with concurrency & deadlocks.",
     teach: ["Operating Systems", "Deadlocks", "Kernel", "Concurrency", "C/C++"],
     rating: 4.8,
     sessions: 189,
@@ -256,7 +257,11 @@ const STORAGE_KEY_NETWORK = "cortex_user_network_directory";
 /** Clean raw username string into normalized lowercase alphanumeric handle */
 export function cleanHandle(input: string): string {
   if (!input) return "";
-  return input.trim().toLowerCase().replace(/^@+/, "").replace(/[^a-z0-9_]/g, "");
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9_]/g, "");
 }
 
 /** Validate username format */
@@ -358,7 +363,9 @@ export function searchNetworkUsers(query: string, excludeUid?: string): NetworkU
     const teachMatch = u.teach?.some((t) => t.toLowerCase().includes(q)) || false;
     const learnMatch = u.learn?.some((l) => l.toLowerCase().includes(q)) || false;
 
-    return handleMatch || nameMatch || instMatch || degreeMatch || roleMatch || teachMatch || learnMatch;
+    return (
+      handleMatch || nameMatch || instMatch || degreeMatch || roleMatch || teachMatch || learnMatch
+    );
   });
 }
 

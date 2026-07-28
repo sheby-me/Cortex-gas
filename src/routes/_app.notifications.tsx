@@ -115,9 +115,12 @@ function NotifPage() {
       const textMatch = n.text.toLowerCase().includes(q);
       const titleMatch = n.title?.toLowerCase().includes(q) || false;
       const userMatch =
-        n.fromUser?.displayName.toLowerCase().includes(q) ||
-        n.fromUser?.username.toLowerCase().includes(q) ||
-        n.fromUser?.uid.toLowerCase().includes(q) ||
+        (n.fromUser?.displayName.toLowerCase().includes(q) ||
+          n.fromUser?.username.toLowerCase().includes(q) ||
+          n.fromUser?.uid.toLowerCase().includes(q) ||
+          n.toUser?.displayName.toLowerCase().includes(q) ||
+          n.toUser?.username.toLowerCase().includes(q) ||
+          n.toUser?.uid.toLowerCase().includes(q)) ??
         false;
       return textMatch || titleMatch || userMatch;
     }
@@ -290,7 +293,12 @@ function NotifPage() {
           filteredNotifs.map((n) => {
             const Icon = iconMap[n.type] ?? Bell;
             const isBuddyRequest = n.type === "buddy_request";
-            const from = n.fromUser;
+            const isOutgoing =
+              profile &&
+              (n.fromUser?.uid === profile.uid ||
+                cleanHandle(n.fromUser?.username || "") === cleanHandle(profile.username || ""));
+
+            const peerUser = isOutgoing ? n.toUser || n.fromUser : n.fromUser;
 
             return (
               <Card
@@ -303,13 +311,13 @@ function NotifPage() {
                 }`}
               >
                 <div className="flex items-start gap-3.5">
-                  {/* Category Icon or Sender Avatar */}
-                  {from ? (
+                  {/* Category Icon or Peer User Avatar */}
+                  {peerUser ? (
                     <div className="relative shrink-0">
                       <Avatar className="h-11 w-11 border border-border">
-                        <AvatarImage src={from.avatarUrl} />
+                        <AvatarImage src={peerUser.avatarUrl} />
                         <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
-                          {from.displayName.slice(0, 2).toUpperCase()}
+                          {peerUser.displayName.slice(0, 2).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
                       <div className="absolute -bottom-1 -right-1 grid h-5 w-5 place-items-center rounded-full bg-gradient-primary text-primary-foreground shadow-soft">
@@ -326,10 +334,14 @@ function NotifPage() {
                   <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {n.title && <span className="font-semibold text-xs">{n.title}</span>}
-                        {from && (
+                        <span className="font-semibold text-xs">
+                          {isOutgoing && isBuddyRequest
+                            ? "Outgoing Buddy Request"
+                            : n.title || "Notification"}
+                        </span>
+                        {peerUser && (
                           <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium">
-                            @{from.username}
+                            @{peerUser.username}
                           </span>
                         )}
                         {!n.read && (
@@ -354,15 +366,19 @@ function NotifPage() {
                       </div>
                     </div>
 
-                    <p className="text-xs text-foreground font-medium leading-relaxed">{n.text}</p>
+                    <p className="text-xs text-foreground font-medium leading-relaxed">
+                      {isOutgoing && isBuddyRequest && peerUser
+                        ? `Buddy request sent to ${peerUser.displayName} (@${peerUser.username}).`
+                        : n.text}
+                    </p>
 
-                    {/* From user detailed specs */}
-                    {from && (
+                    {/* Peer user detailed specs */}
+                    {peerUser && (
                       <div className="text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
-                        {from.institution && <span>🏫 {from.institution}</span>}
-                        {from.degreeOrStream && <span>· 📚 {from.degreeOrStream}</span>}
+                        {peerUser.institution && <span>🏫 {peerUser.institution}</span>}
+                        {peerUser.degreeOrStream && <span>· 📚 {peerUser.degreeOrStream}</span>}
                         <span className="font-mono text-[10px] text-muted-foreground">
-                          (ID: {from.uid})
+                          (ID: {peerUser.uid})
                         </span>
                       </div>
                     )}
@@ -378,31 +394,40 @@ function NotifPage() {
                     {isBuddyRequest && (
                       <div className="pt-2 flex items-center gap-2 flex-wrap">
                         {n.requestStatus === "pending" ? (
-                          <>
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRespondRequest(n.id, true);
-                              }}
-                              size="sm"
-                              className="h-8 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-soft gap-1.5"
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Accept Request
-                            </Button>
-                            <Button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRespondRequest(n.id, false);
-                              }}
+                          isOutgoing ? (
+                            <Badge
                               variant="outline"
-                              size="sm"
-                              className="h-8 rounded-xl text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:border-destructive/40"
+                              className="text-amber-600 bg-amber-500/10 border-amber-500/30 text-xs py-1 px-2.5"
                             >
-                              <XCircle className="h-3.5 w-3.5" />
-                              Decline
-                            </Button>
-                          </>
+                              Pending Response
+                            </Badge>
+                          ) : (
+                            <>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRespondRequest(n.id, true);
+                                }}
+                                size="sm"
+                                className="h-8 rounded-xl text-xs bg-emerald-600 hover:bg-emerald-700 text-white shadow-soft gap-1.5"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                                Accept Request
+                              </Button>
+                              <Button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRespondRequest(n.id, false);
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="h-8 rounded-xl text-xs gap-1.5 text-muted-foreground hover:text-destructive hover:border-destructive/40"
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                Decline
+                              </Button>
+                            </>
+                          )
                         ) : n.requestStatus === "accepted" ? (
                           <div className="flex items-center gap-2">
                             <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/30 text-xs py-1 px-2.5 gap-1">
