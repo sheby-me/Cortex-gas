@@ -1,4 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
+import { CortexBrand } from "@/components/cortex-logo";
 import {
   LayoutDashboard,
   Search,
@@ -93,14 +94,8 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
       <SidebarHeader className="p-4">
-        <Link to="/" className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground font-display text-sm font-bold">
-            C
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-base font-display font-semibold tracking-tight">Cortex</span>
-            <span className="text-[10px] text-muted-foreground">Peer Learning</span>
-          </div>
+        <Link to="/">
+          <CortexBrand subtitle="Peer Learning" />
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">

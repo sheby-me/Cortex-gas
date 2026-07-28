@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { CortexBrand } from "@/components/cortex-logo";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -83,11 +84,8 @@ function AuthPage() {
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <div className="relative hidden overflow-hidden border-r border-border bg-secondary lg:block">
         <div className="relative z-10 flex h-full flex-col justify-between p-12">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground font-display text-sm font-bold">
-              C
-            </div>
-            <span className="text-lg font-display font-semibold tracking-tight">Cortex</span>
+          <Link to="/">
+            <CortexBrand />
           </Link>
           <div>
             <h2 className="font-display text-5xl font-medium leading-[1.05] tracking-tight">

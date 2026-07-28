@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { CortexBrand, CortexLogo } from "@/components/cortex-logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -29,11 +30,8 @@ function Landing() {
       {/* Nav */}
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
-          <Link to="/" className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant">
-              <Sparkles className="h-4 w-4" strokeWidth={2.5} />
-            </div>
-            <span className="text-lg font-bold tracking-tight">Cortex</span>
+          <Link to="/">
+            <CortexBrand />
           </Link>
           <nav className="hidden items-center gap-8 text-sm font-medium text-muted-foreground md:flex">
             <a href="#features" className="hover:text-foreground">
@@ -404,9 +402,7 @@ function Landing() {
       <footer className="border-t border-border py-10">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-sm text-muted-foreground md:flex-row">
           <div className="flex items-center gap-2">
-            <div className="grid h-6 w-6 place-items-center rounded-md bg-gradient-primary text-primary-foreground">
-              <Sparkles className="h-3 w-3" />
-            </div>
+            <CortexLogo size={22} />
             <span className="font-semibold text-foreground">Cortex</span>
             <span>· © 2026</span>
           </div>

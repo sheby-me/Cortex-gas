@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { CortexLogo } from "@/components/cortex-logo";
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -412,10 +413,10 @@ function AdminPanel() {
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/90 px-6 backdrop-blur">
-        <div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground">
-          <Shield className="h-4 w-4" />
+        <div className="flex items-center gap-2">
+          <CortexLogo size={28} />
+          <div className="text-sm font-bold tracking-tight">Cortex Admin</div>
         </div>
-        <div className="text-sm font-semibold tracking-tight">Cortex Admin</div>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
           <Button onClick={signOut} size="sm" variant="ghost" className="rounded-md">

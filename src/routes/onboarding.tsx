@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { CortexBrand } from "@/components/cortex-logo";
 import { useState, type KeyboardEvent } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -157,11 +158,8 @@ function OnboardingPage() {
   return (
     <div className="min-h-screen bg-secondary">
       <div className="mx-auto max-w-3xl px-6 py-10">
-        <Link to="/" className="flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-md bg-primary text-primary-foreground font-display text-sm font-bold">
-            C
-          </div>
-          <span className="text-lg font-display font-semibold tracking-tight">Cortex</span>
+        <Link to="/">
+          <CortexBrand />
         </Link>
         <div className="mt-8">
           <Badge variant="secondary" className="rounded-md bg-background">
