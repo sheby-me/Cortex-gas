@@ -30,8 +30,8 @@ function Landing() {
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/70 backdrop-blur-xl">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary shadow-elegant">
-              <Sparkles className="h-4 w-4 text-white" strokeWidth={2.5} />
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant">
+              <Sparkles className="h-4 w-4" strokeWidth={2.5} />
             </div>
             <span className="text-lg font-bold tracking-tight">Cortex</span>
           </Link>
@@ -56,7 +56,7 @@ function Landing() {
             <Button
               asChild
               size="sm"
-              className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90"
+              className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 font-medium"
             >
               <Link to="/onboarding">
                 Get started
@@ -90,7 +90,7 @@ function Landing() {
               <Button
                 asChild
                 size="lg"
-                className="h-12 rounded-xl bg-gradient-primary px-6 text-base text-white shadow-elegant hover:opacity-90"
+                className="h-12 rounded-xl bg-gradient-primary px-6 text-base text-primary-foreground shadow-elegant hover:opacity-90 font-medium"
               >
                 <Link to="/onboarding">
                   Start learning free
@@ -134,7 +134,7 @@ function Landing() {
                     key={s.label}
                     className="flex items-center gap-3 rounded-xl bg-background p-4 shadow-soft"
                   >
-                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-primary text-white">
+                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-gradient-primary text-primary-foreground">
                       <s.icon className="h-5 w-5" />
                     </div>
                     <div>
@@ -313,7 +313,7 @@ function Landing() {
               key={t}
               className="group flex items-center gap-3 rounded-2xl border-border p-4 shadow-soft transition hover:-translate-y-0.5 hover:shadow-elegant"
             >
-              <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent text-accent-foreground transition group-hover:bg-gradient-primary group-hover:text-white">
+              <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent text-accent-foreground transition group-hover:bg-gradient-primary group-hover:text-primary-foreground">
                 <Sparkles className="h-4 w-4" />
               </div>
               <span className="text-sm font-semibold">{t}</span>
@@ -369,7 +369,7 @@ function Landing() {
             <Button
               asChild
               size="lg"
-              className="mt-6 h-12 rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90"
+              className="mt-6 h-12 rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 font-medium"
             >
               <Link to="/teacher">
                 <GraduationCap className="mr-2 h-4 w-4" />
@@ -392,7 +392,7 @@ function Landing() {
         <Button
           asChild
           size="lg"
-          className="mt-8 h-12 rounded-xl bg-gradient-primary px-8 text-base text-white shadow-elegant hover:opacity-90"
+          className="mt-8 h-12 rounded-xl bg-gradient-primary px-8 text-base text-primary-foreground shadow-elegant hover:opacity-90 font-medium"
         >
           <Link to="/onboarding">
             Claim your 100 credits
@@ -404,8 +404,8 @@ function Landing() {
       <footer className="border-t border-border py-10">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-6 text-sm text-muted-foreground md:flex-row">
           <div className="flex items-center gap-2">
-            <div className="grid h-6 w-6 place-items-center rounded-md bg-gradient-primary">
-              <Sparkles className="h-3 w-3 text-white" />
+            <div className="grid h-6 w-6 place-items-center rounded-md bg-gradient-primary text-primary-foreground">
+              <Sparkles className="h-3 w-3" />
             </div>
             <span className="font-semibold text-foreground">Cortex</span>
             <span>· © 2026</span>

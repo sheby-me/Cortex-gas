@@ -49,7 +49,7 @@ function Stat({
     <Card className="rounded-2xl border-border p-5 shadow-soft">
       <div className="flex items-center justify-between">
         <div
-          className={`grid h-10 w-10 place-items-center rounded-xl ${tint === "primary" ? "bg-gradient-primary text-white" : "bg-accent text-accent-foreground"}`}
+          className={`grid h-10 w-10 place-items-center rounded-xl ${tint === "primary" ? "bg-gradient-primary text-primary-foreground" : "bg-accent text-accent-foreground"}`}
         >
           <Icon className="h-5 w-5" />
         </div>
@@ -91,7 +91,7 @@ function Dashboard() {
           </Button>
           <Button
             asChild
-            className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90"
+            className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
           >
             <Link to="/ai">
               <Sparkles className="mr-1.5 h-4 w-4" />
@@ -176,7 +176,7 @@ function Dashboard() {
                   to={a.to}
                   className="group flex items-center gap-3 rounded-2xl border border-border bg-card p-4 shadow-soft transition hover:-translate-y-0.5 hover:shadow-elegant"
                 >
-                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-accent-foreground transition group-hover:bg-gradient-primary group-hover:text-white">
+                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-accent-foreground transition group-hover:bg-gradient-primary group-hover:text-primary-foreground">
                     <a.icon className="h-4 w-4" />
                   </div>
                   <div className="flex-1 text-sm font-semibold">{a.label}</div>

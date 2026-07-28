@@ -1,12 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import * as Icons from "lucide-react";
 import { aiTools } from "@/lib/mock-data";
+import { useAuth, type GradeLevel } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/ai")({
@@ -90,7 +98,24 @@ function getFileIcon(mimeType: string, fileName: string) {
 }
 
 export function AiPage() {
+  const { profile, updateProfile } = useAuth();
   const [selectedToolId, setSelectedToolId] = useState<string>("study");
+  const [selectedGrade, setSelectedGrade] = useState<GradeLevel>(
+    (profile?.gradeLevel as GradeLevel) || "Undergraduate",
+  );
+
+  useEffect(() => {
+    if (profile?.gradeLevel) {
+      setSelectedGrade(profile.gradeLevel as GradeLevel);
+    }
+  }, [profile?.gradeLevel]);
+
+  const handleGradeChange = (newGrade: GradeLevel) => {
+    setSelectedGrade(newGrade);
+    updateProfile({ gradeLevel: newGrade });
+    toast.success(`AI Response Level set to: ${newGrade}`);
+  };
+
   const [prompt, setPrompt] = useState<string>("");
   const [context, setContext] = useState<string>("");
   const [showContext, setShowContext] = useState<boolean>(false);
@@ -216,6 +241,7 @@ export function AiPage() {
             "Analyze attached reference materials and give a detailed study summary.",
           toolId: currentTool.id,
           toolName: currentTool.name,
+          gradeLevel: selectedGrade,
           context: context.trim() || undefined,
           files: attachedFiles.map((f) => ({
             name: f.name,
@@ -272,8 +298,8 @@ export function AiPage() {
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-primary shadow-elegant">
-            <Icons.Sparkles className="h-6 w-6 text-white" />
+          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-primary text-primary-foreground shadow-elegant">
+            <Icons.Sparkles className="h-6 w-6" />
           </div>
           <div>
             <h1 className="font-display text-3xl md:text-4xl tracking-tight font-medium">
@@ -315,16 +341,37 @@ export function AiPage() {
       <Card className="mb-8 overflow-hidden rounded-3xl border-border shadow-soft">
         <div className="bg-gradient-mesh p-6">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Badge
                 variant="secondary"
                 className="rounded-full bg-background/80 backdrop-blur font-medium"
               >
                 Tool: <span className="text-foreground font-semibold ml-1">{currentTool.name}</span>
               </Badge>
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                {currentTool.desc}
-              </span>
+
+              {/* Grade Level Selector Dropdown */}
+              <div className="flex items-center gap-1.5 bg-background/90 rounded-full px-3 py-1 border border-border shadow-xs">
+                <Icons.GraduationCap className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs text-muted-foreground font-medium hidden sm:inline">
+                  Academic Level:
+                </span>
+                <Select
+                  value={selectedGrade}
+                  onValueChange={(val) => handleGradeChange(val as GradeLevel)}
+                >
+                  <SelectTrigger className="h-6 border-0 bg-transparent px-1 py-0 text-xs font-semibold focus:ring-0 text-foreground">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Matric">Matric (High School 8th-10th)</SelectItem>
+                    <SelectItem value="Intermediate">Intermediate (FSc / A-Levels)</SelectItem>
+                    <SelectItem value="Undergraduate">Undergraduate (Bachelor's)</SelectItem>
+                    <SelectItem value="Graduate">Graduate (Master's)</SelectItem>
+                    <SelectItem value="Mphil">Mphil (Post-Graduate)</SelectItem>
+                    <SelectItem value="Phd">Phd (Doctoral / Research)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <button
@@ -468,7 +515,7 @@ export function AiPage() {
             <Button
               onClick={handleGenerate}
               disabled={loading}
-              className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90 px-5"
+              className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 px-5"
             >
               {loading ? (
                 <>
@@ -491,7 +538,7 @@ export function AiPage() {
         <Card className="mb-8 rounded-2xl border-border p-6 shadow-soft bg-background">
           <div className="flex items-center justify-between border-b border-border pb-4 mb-4">
             <div className="flex items-center gap-2">
-              <Badge className="bg-gradient-primary text-white border-0">
+              <Badge className="bg-gradient-primary text-primary-foreground border-0">
                 {latestGeneration.toolName}
               </Badge>
               {Boolean(latestGeneration.filesCount) && latestGeneration.filesCount! > 0 && (
@@ -602,8 +649,8 @@ export function AiPage() {
                 <div
                   className={`grid h-10 w-10 place-items-center rounded-xl transition ${
                     isSelected
-                      ? "bg-gradient-primary text-white"
-                      : "bg-accent text-accent-foreground group-hover:bg-gradient-primary group-hover:text-white"
+                      ? "bg-gradient-primary text-primary-foreground"
+                      : "bg-accent text-accent-foreground group-hover:bg-gradient-primary group-hover:text-primary-foreground"
                   }`}
                 >
                   <Icon className="h-5 w-5" />

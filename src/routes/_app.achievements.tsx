@@ -40,7 +40,7 @@ function AchPage() {
               {a.earned && <div className="absolute inset-0 bg-gradient-mesh opacity-40" />}
               <div className="relative">
                 <div
-                  className={`mx-auto grid h-16 w-16 place-items-center rounded-2xl ${a.earned ? "bg-gradient-primary text-white shadow-elegant" : "bg-muted text-muted-foreground"}`}
+                  className={`mx-auto grid h-16 w-16 place-items-center rounded-2xl ${a.earned ? "bg-gradient-primary text-primary-foreground shadow-elegant" : "bg-muted text-muted-foreground"}`}
                 >
                   <Icon className="h-7 w-7" />
                 </div>

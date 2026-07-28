@@ -109,11 +109,9 @@ export function AppSidebar() {
             {section("Workspace", [
               { title: "Teacher Studio", url: "/teacher", icon: GraduationCap },
             ])}
-            {section("You", [
-              { title: "Messages", url: "/messages", icon: Mail },
-              { title: "Profile", url: "/profile", icon: User },
-              { title: "Settings", url: "/settings", icon: Settings },
-            ])}
+            {section("Learn", learn)}
+            {section("Grow", grow)}
+            {section("You", me)}
           </>
         ) : (
           <>

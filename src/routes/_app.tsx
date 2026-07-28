@@ -5,6 +5,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Bell, Search, Sparkles, LogOut } from "lucide-react";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut as fbSignOut } from "firebase/auth";
 import { auth } from "@/integrations/firebase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -13,11 +14,9 @@ export const Route = createFileRoute("/_app")({
   component: AppLayout,
 });
 
-const TUTOR_HOME = "/teacher";
 const STUDENT_HOME = "/dashboard";
 
-// Routes each role is allowed to visit under /_app
-const TUTOR_ALLOWED = ["/teacher", "/messages", "/profile", "/settings", "/notifications"];
+// Routes that students are not allowed to visit
 const STUDENT_BLOCKED = ["/teacher"];
 
 function AppLayout() {
@@ -32,18 +31,16 @@ function AppLayout() {
       return;
     }
     if (!role) return; // wait for role
-    const allowed = (list: string[]) =>
-      list.some((p) => pathname === p || pathname.startsWith(p + "/"));
     if (role === "admin") {
       navigate({ to: "/admin" });
       return;
     }
-    if (role === "tutor" && !allowed(TUTOR_ALLOWED)) navigate({ to: TUTOR_HOME });
-    else if (
+    if (
       role === "student" &&
       STUDENT_BLOCKED.some((p) => pathname === p || pathname.startsWith(p + "/"))
-    )
+    ) {
       navigate({ to: STUDENT_HOME });
+    }
   }, [user, role, loading, pathname, navigate]);
 
   async function signOut() {
@@ -65,6 +62,7 @@ function AppLayout() {
               />
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <ThemeToggle />
               <Button asChild size="sm" variant="ghost" className="rounded-md">
                 <Link to="/notifications">
                   <Bell className="h-4 w-4" />

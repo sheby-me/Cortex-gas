@@ -110,7 +110,7 @@ export function RoadmapPage() {
         </div>
         <Button
           onClick={() => setShowGenerator(!showGenerator)}
-          className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90"
+          className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
         >
           <Sparkles className="mr-1.5 h-4 w-4" />
           {showGenerator ? "Close Generator" : "Generate Roadmap"}
@@ -121,7 +121,9 @@ export function RoadmapPage() {
       {showGenerator && (
         <Card className="mb-8 overflow-hidden rounded-2xl border-primary/30 p-6 shadow-soft bg-gradient-mesh">
           <div className="flex items-center gap-2 mb-4">
-            <Badge className="bg-gradient-primary text-white border-0">AI Generator</Badge>
+            <Badge className="bg-gradient-primary text-primary-foreground border-0">
+              AI Generator
+            </Badge>
             <h2 className="text-lg font-semibold">Build Custom Curriculum with Gemini</h2>
           </div>
 
@@ -158,7 +160,7 @@ export function RoadmapPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="rounded-xl bg-gradient-primary text-white shadow-elegant"
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
               >
                 {loading ? (
                   <>
@@ -193,7 +195,7 @@ export function RoadmapPage() {
                 {activeRoadmap.weeks} Weeks · {activeRoadmap.milestones} Milestones
               </p>
             </div>
-            <Badge className="bg-gradient-primary text-white border-0">
+            <Badge className="bg-gradient-primary text-primary-foreground border-0">
               <Sparkles className="mr-1 h-3 w-3" /> Gemini Curriculum
             </Badge>
           </div>

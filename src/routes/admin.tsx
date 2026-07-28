@@ -36,6 +36,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { formatAuthError, validateSignIn, validateSignUp } from "@/lib/auth-errors";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   collection,
   deleteDoc,
@@ -415,7 +416,8 @@ function AdminPanel() {
           <Shield className="h-4 w-4" />
         </div>
         <div className="text-sm font-semibold tracking-tight">Cortex Admin</div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <Button onClick={signOut} size="sm" variant="ghost" className="rounded-md">
             <LogOut className="mr-1.5 h-4 w-4" />
             Sign out

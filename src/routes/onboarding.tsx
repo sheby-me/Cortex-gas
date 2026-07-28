@@ -7,9 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ArrowRight, X } from "lucide-react";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db } from "@/integrations/firebase/client";
+import { useAuth, type GradeLevel } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/onboarding")({
@@ -84,11 +92,14 @@ function ChipInput({
 
 function OnboardingPage() {
   const navigate = useNavigate();
+  const { updateProfile } = useAuth();
   const [name, setName] = useState("");
-  const [country, setCountry] = useState("");
+  const [country, setCountry] = useState("United States");
   const [institution, setInstitution] = useState("");
-  const [level, setLevel] = useState("");
-  const [timezone, setTimezone] = useState("");
+  const [level, setLevel] = useState<GradeLevel>("Undergraduate");
+  const [semester, setSemester] = useState("");
+  const [degree, setDegree] = useState("");
+  const [timezone, setTimezone] = useState("UTC-5 (EST)");
   const [bio, setBio] = useState("");
   const [teach, setTeach] = useState<string[]>([]);
   const [learn, setLearn] = useState<string[]>([]);
@@ -96,29 +107,45 @@ function OnboardingPage() {
   const [saving, setSaving] = useState(false);
 
   async function save() {
-    const u = auth.currentUser;
-    if (!u) {
-      navigate({ to: "/auth" });
-      return;
-    }
     setSaving(true);
     try {
-      await setDoc(
-        doc(db, "users", u.uid),
-        {
-          displayName: name || u.displayName || u.email?.split("@")[0],
-          country,
-          institution,
-          level,
-          timezone,
-          bio,
-          teach,
-          learn,
-          hoursGoal: hours,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true },
-      );
+      await updateProfile({
+        displayName: name || "Alex Student",
+        country,
+        institution: institution || "Stanford University",
+        gradeLevel: level,
+        semesterOrYear: semester || "Semester 1",
+        degreeOrStream: degree || "General Studies",
+        timezone,
+        about: bio,
+        teach,
+        learn,
+        hoursGoal: hours,
+      });
+
+      const u = auth.currentUser;
+      if (u) {
+        await setDoc(
+          doc(db, "users", u.uid),
+          {
+            displayName: name || u.displayName || u.email?.split("@")[0],
+            country,
+            institution,
+            gradeLevel: level,
+            semesterOrYear: semester,
+            degreeOrStream: degree,
+            timezone,
+            about: bio,
+            teach,
+            learn,
+            hoursGoal: hours,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      }
+
+      toast.success("Profile setup complete!");
       navigate({ to: "/dashboard" });
     } catch (e: unknown) {
       toast.error((e as { message?: string })?.message ?? "Could not save profile");
@@ -144,7 +171,8 @@ function OnboardingPage() {
             Tell us about you.
           </h1>
           <p className="mt-2 text-muted-foreground">
-            Cortex is for learners of any subject, any grade — from an 8th grader to a PhD.
+            Cortex AI adapts its teaching explanations specifically to your selected Grade Level —
+            from Matric to PhD.
           </p>
           <Progress value={33} className="mt-4 h-1.5" />
         </div>
@@ -169,31 +197,69 @@ function OnboardingPage() {
               />
             </div>
             <div>
-              <Label>School / Institution</Label>
+              <Label>Grade / Academic Level *</Label>
+              <Select value={level} onValueChange={(v) => setLevel(v as GradeLevel)}>
+                <SelectTrigger className="mt-1.5 rounded-md">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Matric">Matric (8th - 10th Grade)</SelectItem>
+                  <SelectItem value="Intermediate">Intermediate (FSc / A-Levels)</SelectItem>
+                  <SelectItem value="Undergraduate">Undergraduate (Bachelor's)</SelectItem>
+                  <SelectItem value="Graduate">Graduate (Master's)</SelectItem>
+                  <SelectItem value="Mphil">Mphil (Post-Graduate)</SelectItem>
+                  <SelectItem value="Phd">Phd (Doctoral / Research)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>School / University Name</Label>
               <Input
                 value={institution}
                 onChange={(e) => setInstitution(e.target.value)}
                 className="mt-1.5 rounded-md"
-                placeholder="School, college, workplace — or self-taught"
+                placeholder="e.g. Stanford University or Lincoln High"
               />
             </div>
             <div>
-              <Label>Grade / Level</Label>
+              <Label>Semester / Class Year</Label>
               <Input
-                value={level}
-                onChange={(e) => setLevel(e.target.value)}
+                value={semester}
+                onChange={(e) => setSemester(e.target.value)}
                 className="mt-1.5 rounded-md"
-                placeholder="e.g. Grade 8, Undergrad Y2, Working pro"
+                placeholder="e.g. Semester 4 or Class 10"
+              />
+            </div>
+            <div>
+              <Label>Degree OR Science/Arts Stream</Label>
+              <Input
+                value={degree}
+                onChange={(e) => setDegree(e.target.value)}
+                className="mt-1.5 rounded-md"
+                placeholder="e.g. BS Computer Science OR Science Stream"
               />
             </div>
             <div>
               <Label>Timezone</Label>
-              <Input
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                className="mt-1.5 rounded-md"
-                placeholder="e.g. GMT+1, EST, JST"
-              />
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger className="mt-1.5 rounded-md">
+                  <SelectValue placeholder="Select Timezone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="UTC+5 (PST, Pakistan Standard Time)">
+                    UTC+5 (PST, Pakistan Standard Time)
+                  </SelectItem>
+                  <SelectItem value="UTC-5 (EST)">UTC-5 (EST, Eastern Standard Time)</SelectItem>
+                  <SelectItem value="UTC-8 (PST)">UTC-8 (PST, Pacific Standard Time)</SelectItem>
+                  <SelectItem value="UTC+0 (GMT)">UTC+0 (GMT, Greenwich Mean Time)</SelectItem>
+                  <SelectItem value="UTC+1 (CET)">UTC+1 (CET, Central European Time)</SelectItem>
+                  <SelectItem value="UTC+5:30 (IST)">
+                    UTC+5:30 (IST, Indian Standard Time)
+                  </SelectItem>
+                  <SelectItem value="UTC+8 (SGT)">UTC+8 (SGT, Singapore Time)</SelectItem>
+                  <SelectItem value="UTC+9 (JST)">UTC+9 (JST, Japan Standard Time)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label>Weekly study hours goal</Label>

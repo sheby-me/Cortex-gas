@@ -39,7 +39,7 @@ function NotifPage() {
           const Icon = iconOf[n.type] ?? Bell;
           return (
             <div key={n.id} className="flex items-start gap-3 rounded-xl p-3 hover:bg-muted/60">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-primary text-white shadow-soft">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-primary text-primary-foreground shadow-soft">
                 <Icon className="h-4 w-4" />
               </div>
               <div className="flex-1">

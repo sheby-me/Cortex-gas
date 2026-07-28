@@ -30,7 +30,7 @@ function TeacherPage() {
             Your bookings, students, courses and earnings — one place.
           </p>
         </div>
-        <Button className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90">
+        <Button className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90">
           <Plus className="mr-1.5 h-4 w-4" />
           New course
         </Button>
@@ -44,7 +44,7 @@ function TeacherPage() {
         ].map((s) => (
           <Card key={s.l} className="rounded-2xl border-border p-5 shadow-soft">
             <div className="flex items-center justify-between">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-primary text-white">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-gradient-primary text-primary-foreground">
                 <s.icon className="h-4 w-4" />
               </div>
               <Badge variant="secondary" className="rounded-full">
@@ -74,7 +74,7 @@ function TeacherPage() {
               </div>
               <Button
                 size="sm"
-                className="rounded-xl bg-gradient-primary text-white shadow-elegant hover:opacity-90"
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
               >
                 Join
               </Button>

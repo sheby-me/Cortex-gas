@@ -14,6 +14,7 @@ interface AIRequestPayload {
   context?: string;
   systemInstruction?: string;
   files?: AttachedFile[];
+  gradeLevel?: string;
 }
 
 interface VercelRequest {
@@ -68,7 +69,15 @@ export async function handleAIRequest(request: Request): Promise<Response> {
       );
     }
 
-    const { prompt, toolId = "study", toolName, context, systemInstruction, files } = body;
+    const {
+      prompt,
+      toolId = "study",
+      toolName,
+      context,
+      systemInstruction,
+      files,
+      gradeLevel,
+    } = body;
 
     if (!prompt || typeof prompt !== "string" || !prompt.trim()) {
       return new Response(
@@ -90,13 +99,38 @@ export async function handleAIRequest(request: Request): Promise<Response> {
     });
 
     let defaultSystemInstruction =
-      "You are Cortex AI, an intelligent, empathetic academic assistant, tutor, and study companion for college and high school students. " +
+      "You are Cortex AI, an intelligent, empathetic academic assistant, tutor, and study companion. " +
       "Provide clear, structured, engaging, and highly accurate educational responses. " +
       "Format your output cleanly using Markdown headers, bullet points, code blocks, or bold text where appropriate.";
 
+    if (gradeLevel) {
+      defaultSystemInstruction += `\n\nCRITICAL ACADEMIC ADAPTATION RULE: The student is currently studying at the "${gradeLevel}" level. You MUST tailor all your explanations, terminology, depth, example problems, and mathematical rigor specifically for a ${gradeLevel} student:`;
+      if (gradeLevel === "Matric") {
+        defaultSystemInstruction +=
+          "\n- Matric Level (8th - 10th Grade): Focus on foundational clarity, clear step-by-step guidance, relatable real-world visual analogies, encouraging tone, and plain accessible explanations without unneeded complex jargon.";
+      } else if (gradeLevel === "Intermediate") {
+        defaultSystemInstruction +=
+          "\n- Intermediate Level (FSc / A-Levels / 11th-12th Grade): Provide pre-university structure, clear formula derivations, exam-focused key points, and foundational conceptual rigor.";
+      } else if (gradeLevel === "Undergraduate") {
+        defaultSystemInstruction +=
+          "\n- Undergraduate Level (Bachelor's / College): Maintain professional academic rigor, standard domain terminology, precise technical logic, working code implementations, and analytical problem-solving.";
+      } else if (gradeLevel === "Graduate") {
+        defaultSystemInstruction +=
+          "\n- Graduate Level (Master's): Focus on advanced domain mechanics, research literature synthesis, critical trade-off analysis, and higher-order engineering or academic reasoning.";
+      } else if (gradeLevel === "Mphil") {
+        defaultSystemInstruction +=
+          "\n- Mphil Level (Post-graduate Research): Emphasize research methodologies, theoretical frameworks, literature critiques, and formal analytical proofs.";
+      } else if (gradeLevel === "Phd") {
+        defaultSystemInstruction +=
+          "\n- PhD Level (Doctoral / Advanced Research): Provide cutting-edge research insights, peer-reviewed academic rigor, formal mathematical proofs, paradigm comparisons, and publication-grade synthesis.";
+      }
+    }
+
     if (toolId === "quiz") {
       defaultSystemInstruction +=
-        "\n\nSpecialized mode: Quiz Generator. When generating a quiz, provide 3 to 5 clear multiple-choice questions with options (A, B, C, D) and specify the correct answer with a short explanation for each question.";
+        "\n\nSpecialized mode: Quiz Generator. Generate exactly 5 multiple-choice questions in valid JSON format as an array of objects. Each object MUST have keys: " +
+        '"id" (number), "question" (string), "options" (array of 4 strings e.g. ["Option A", "Option B", "Option C", "Option D"]), "correctAnswer" (string "A", "B", "C", or "D"), "explanation" (string explaining why). ' +
+        "Return the output as a valid JSON array inside a ```json ``` code block.";
     } else if (toolId === "flash") {
       defaultSystemInstruction +=
         "\n\nSpecialized mode: Flashcard Generator. Create clear, concise Front (Question) and Back (Answer/Explanation) pairs ideal for active recall and spaced repetition.";

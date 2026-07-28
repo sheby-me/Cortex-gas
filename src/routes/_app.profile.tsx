@@ -1,233 +1,1058 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Star, Coins, Clock, GraduationCap } from "lucide-react";
-import { creditsHistory, achievements } from "@/lib/mock-data";
-import { useAuth } from "@/hooks/use-auth";
+import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Star,
+  Coins,
+  Clock,
+  GraduationCap,
+  Edit3,
+  Share2,
+  CheckCircle2,
+  AlertCircle,
+  Plus,
+  Trash2,
+  Users,
+  BookOpen,
+  Building2,
+  Calendar,
+  Sparkles,
+  MessageSquare,
+  Upload,
+} from "lucide-react";
+import { creditsHistory, achievements, buddies } from "@/lib/mock-data";
+import {
+  useAuth,
+  calculateProfileCompletion,
+  type GradeLevel,
+  type EducationEntry,
+} from "@/hooks/use-auth";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/profile")({
   head: () => ({
     meta: [
-      { title: "Profile — Cortex" },
-      { name: "description", content: "Your credentials, history, credits and reviews." },
+      { title: "Student Profile — Cortex" },
+      {
+        name: "description",
+        content: "View and edit your profile, education history, grade level, and batchmates.",
+      },
     ],
   }),
   component: ProfilePage,
 });
 
-function ProfilePage() {
-  const { user, profile, role } = useAuth();
-  const displayName =
-    profile?.displayName || user?.displayName || user?.email?.split("@")[0] || "Your profile";
-  const initials = displayName.slice(0, 2).toUpperCase();
+const PRESET_AVATARS = [
+  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=250&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=250&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=250&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=250&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=250&auto=format&fit=crop&q=80",
+];
+
+const PRESET_COVERS = [
+  "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=1200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?w=1200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1451187580459-43490279c0fa?w=1200&auto=format&fit=crop&q=80",
+  "https://images.unsplash.com/photo-1519389950473-47ba0277781c?w=1200&auto=format&fit=crop&q=80",
+];
+
+export function ProfilePage() {
+  const { user, profile, role, updateProfile } = useAuth();
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddEduModalOpen, setIsAddEduModalOpen] = useState(false);
+  const [isLeaveReviewOpen, setIsLeaveReviewOpen] = useState(false);
+
+  // Profile Edit Form State
+  const [editName, setEditName] = useState(profile.displayName || "");
+  const [editAvatar, setEditAvatar] = useState(profile.avatarUrl || PRESET_AVATARS[0]);
+  const [editCover, setEditCover] = useState(profile.coverImageUrl || PRESET_COVERS[0]);
+  const [editGrade, setEditGrade] = useState<GradeLevel>(
+    (profile.gradeLevel as GradeLevel) || "Undergraduate",
+  );
+  const [editInst, setEditInst] = useState(profile.institution || "");
+  const [editSem, setEditSem] = useState(profile.semesterOrYear || "");
+  const [editDeg, setEditDeg] = useState(profile.degreeOrStream || "");
+  const [editAbout, setEditAbout] = useState(profile.about || "");
+  const [editCountry, setEditCountry] = useState(profile.country || "");
+  const [editTimezone, setEditTimezone] = useState(profile.timezone || "");
+
+  // Education History State
+  const [eduList, setEduList] = useState<EducationEntry[]>(
+    profile.educationHistory || [
+      {
+        id: "edu_1",
+        institution: profile.institution || "Stanford University",
+        degreeOrClass: profile.degreeOrStream || "BS Computer Science",
+        streamOrMajor: "Artificial Intelligence",
+        startYear: "2023",
+        endYear: "2027",
+        status: "In Progress",
+        gradeLevel: (profile.gradeLevel as GradeLevel) || "Undergraduate",
+      },
+    ],
+  );
+
+  // New Education Form State
+  const [newEduInst, setNewEduInst] = useState("");
+  const [newEduDeg, setNewEduDeg] = useState("");
+  const [newEduStream, setNewEduStream] = useState("");
+  const [newEduStartYear, setNewEduStartYear] = useState("2022");
+  const [newEduEndYear, setNewEduEndYear] = useState("2026");
+  const [newEduStatus, setNewEduStatus] = useState<"Completed" | "In Progress" | "Pursuing">(
+    "In Progress",
+  );
+  const [newEduGrade, setNewEduGrade] = useState<GradeLevel>("Undergraduate");
+
+  // Review Form State
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewText, setReviewText] = useState("");
+  const [reviewsList, setReviewsList] = useState([
+    {
+      id: "r1",
+      name: "Marcus Vance",
+      role: "tutor",
+      rating: 5,
+      text: "Great study partner! Always prepared with clear questions and structured notes.",
+      time: "2d",
+    },
+    {
+      id: "r2",
+      name: "Sarah Chen",
+      role: "student",
+      rating: 5,
+      text: "Helped me understand operating system concepts in our group session.",
+      time: "1w",
+    },
+  ]);
+
+  const { percentage, missingFields } = calculateProfileCompletion({
+    ...profile,
+    educationHistory: eduList,
+  });
+
+  const handleOpenEdit = () => {
+    setEditName(profile.displayName || "");
+    setEditAvatar(profile.avatarUrl || PRESET_AVATARS[0]);
+    setEditCover(profile.coverImageUrl || PRESET_COVERS[0]);
+    setEditGrade((profile.gradeLevel as GradeLevel) || "Undergraduate");
+    setEditInst(profile.institution || "");
+    setEditSem(profile.semesterOrYear || "");
+    setEditDeg(profile.degreeOrStream || "");
+    setEditAbout(profile.about || "");
+    setEditCountry(profile.country || "United States");
+    setEditTimezone(profile.timezone || "UTC-5 (EST)");
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await updateProfile({
+      displayName: editName,
+      avatarUrl: editAvatar,
+      coverImageUrl: editCover,
+      gradeLevel: editGrade,
+      institution: editInst,
+      semesterOrYear: editSem,
+      degreeOrStream: editDeg,
+      about: editAbout,
+      country: editCountry,
+      timezone: editTimezone,
+      educationHistory: eduList,
+    });
+    setIsEditModalOpen(false);
+    toast.success("Profile updated successfully!");
+  };
+
+  const handleAddEducation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEduInst.trim() || !newEduDeg.trim()) {
+      toast.error("Please enter institution name and degree/class.");
+      return;
+    }
+    const entry: EducationEntry = {
+      id: "edu_" + Date.now(),
+      institution: newEduInst.trim(),
+      degreeOrClass: newEduDeg.trim(),
+      streamOrMajor: newEduStream.trim(),
+      startYear: newEduStartYear,
+      endYear: newEduEndYear,
+      status: newEduStatus,
+      gradeLevel: newEduGrade,
+    };
+    const updated = [entry, ...eduList];
+    setEduList(updated);
+    updateProfile({ educationHistory: updated });
+    setIsAddEduModalOpen(false);
+    toast.success("Education history entry added!");
+
+    // Reset
+    setNewEduInst("");
+    setNewEduDeg("");
+    setNewEduStream("");
+  };
+
+  const handleDeleteEdu = (id: string) => {
+    const updated = eduList.filter((e) => e.id !== id);
+    setEduList(updated);
+    updateProfile({ educationHistory: updated });
+    toast.info("Education history removed.");
+  };
+
+  const handleShareProfile = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url);
+    toast.success("Profile link copied to clipboard!");
+  };
+
+  const handleLeaveReview = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewText.trim()) return;
+    const newRev = {
+      id: "rev_" + Date.now(),
+      name: profile.displayName || "Anonymous Peer",
+      role: role || "student",
+      rating: reviewRating,
+      text: reviewText.trim(),
+      time: "Just now",
+    };
+    setReviewsList([newRev, ...reviewsList]);
+    setIsLeaveReviewOpen(false);
+    setReviewText("");
+    toast.success("Review posted to public profile!");
+  };
+
+  // Find batchmates at same institution or grade level
+  const batchMates = buddies.filter((b) => {
+    if (!profile.institution) return true;
+    return (
+      b.uni.toLowerCase().includes(profile.institution.toLowerCase()) ||
+      profile.institution.toLowerCase().includes(b.uni.toLowerCase()) ||
+      b.topic.toLowerCase().includes("cs") ||
+      b.topic.toLowerCase().includes("math")
+    );
+  });
+
   return (
-    <div className="p-6 md:p-8">
-      <Card className="mb-6 overflow-hidden rounded-lg border-border p-0 shadow-soft">
-        <div className="h-32 bg-secondary" />
-        <div className="flex flex-col gap-4 p-6 md:flex-row md:items-end">
-          <Avatar className="h-24 w-24 -mt-16 border-4 border-card shadow-soft">
-            <AvatarImage src={profile?.avatarUrl || user?.photoURL || undefined} />
-            <div className="flex h-full w-full items-center justify-center bg-primary text-primary-foreground text-lg font-semibold">
-              {initials}
-            </div>
-          </Avatar>
-          <div className="flex-1">
-            <h1 className="font-display text-4xl font-medium tracking-tight">{displayName}</h1>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-              <Badge variant="secondary" className="rounded-md capitalize">
-                {role ?? "member"}
-              </Badge>
-              <span>·</span>
-              <span>Public profile — visible to everyone on Cortex.</span>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" className="rounded-md">
-              Share
-            </Button>
-            <Button className="rounded-md">Edit profile</Button>
-          </div>
+    <div className="p-6 md:p-8 max-w-7xl mx-auto">
+      {/* Profile Header Banner */}
+      <Card className="mb-6 overflow-hidden rounded-3xl border-border p-0 shadow-soft bg-background">
+        <div
+          className="h-44 md:h-52 w-full bg-cover bg-center relative transition-all"
+          style={{
+            backgroundImage: `url(${profile.coverImageUrl || PRESET_COVERS[0]})`,
+          }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
         </div>
-        <div className="grid grid-cols-2 gap-3 border-t border-border p-6 md:grid-cols-4">
-          {[
-            { icon: Coins, l: "Credits", v: "100" },
-            { icon: Clock, l: "Hours taught", v: "—" },
-            { icon: Star, l: "Rating", v: "—" },
-            { icon: GraduationCap, l: "Sessions", v: "—" },
-          ].map((s) => (
-            <div key={s.l} className="flex items-center gap-3 rounded-md bg-secondary p-3">
-              <div className="grid h-10 w-10 place-items-center rounded-md bg-primary text-primary-foreground">
-                <s.icon className="h-4 w-4" />
+
+        <div className="p-6 relative pt-0">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-16 md:-mt-20 mb-4">
+            <div className="flex items-end gap-4">
+              <Avatar className="h-28 w-28 md:h-32 md:w-32 border-4 border-background shadow-elegant rounded-3xl">
+                <AvatarImage src={profile.avatarUrl || user?.photoURL || PRESET_AVATARS[0]} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+                  {(profile.displayName || "S").slice(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+
+              <div className="pb-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="font-display text-3xl md:text-4xl font-medium tracking-tight">
+                    {profile.displayName || "Alex Morgan"}
+                  </h1>
+                  <Badge className="bg-gradient-primary text-primary-foreground border-0 font-medium px-3 py-1 text-xs">
+                    <GraduationCap className="mr-1 h-3.5 w-3.5" />
+                    {profile.gradeLevel || "Undergraduate"}
+                  </Badge>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs md:text-sm text-muted-foreground">
+                  <span className="flex items-center gap-1 text-foreground font-medium">
+                    <Building2 className="h-3.5 w-3.5 text-primary" />
+                    {profile.institution || "Stanford University"}
+                  </span>
+                  <span>·</span>
+                  <span>{profile.semesterOrYear || "Semester 4"}</span>
+                  <span>·</span>
+                  <span>{profile.degreeOrStream || "BS Computer Science"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleShareProfile}
+                variant="outline"
+                className="rounded-xl border-border"
+              >
+                <Share2 className="mr-1.5 h-4 w-4" /> Share
+              </Button>
+              <Button
+                onClick={handleOpenEdit}
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
+              >
+                <Edit3 className="mr-1.5 h-4 w-4" /> Edit Profile
+              </Button>
+            </div>
+          </div>
+
+          {/* Profile Completion Bar */}
+          <Card className="mb-4 rounded-2xl border-border bg-gradient-mesh p-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold">Profile Completion</span>
+                <Badge
+                  variant={percentage === 100 ? "default" : "secondary"}
+                  className="rounded-full text-xs font-bold"
+                >
+                  {percentage}% Complete
+                </Badge>
+              </div>
+
+              {percentage < 100 && (
+                <Button
+                  onClick={handleOpenEdit}
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs font-medium text-primary hover:underline p-0"
+                >
+                  Complete profile steps →
+                </Button>
+              )}
+            </div>
+
+            <Progress value={percentage} className="h-2 rounded-full mb-2" />
+
+            {missingFields.length > 0 ? (
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5 flex-wrap">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                <span>Next steps to reach 100%:</span>
+                <span className="text-foreground font-medium">
+                  {missingFields.slice(0, 3).join(", ")}
+                </span>
+              </div>
+            ) : (
+              <div className="text-xs text-emerald-600 flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                Your profile is 100% complete! Great job representing your student identity.
+              </div>
+            )}
+          </Card>
+
+          {/* Stats Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 border-t border-border pt-4">
+            <div className="flex items-center gap-3 rounded-2xl bg-secondary/50 p-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary text-primary-foreground">
+                <Coins className="h-5 w-5" />
               </div>
               <div>
-                <div className="text-lg font-bold">{s.v}</div>
-                <div className="text-xs text-muted-foreground">{s.l}</div>
+                <div className="text-lg font-bold">{profile.credits || 120}</div>
+                <div className="text-xs text-muted-foreground">Study Credits</div>
               </div>
             </div>
-          ))}
+
+            <div className="flex items-center gap-3 rounded-2xl bg-secondary/50 p-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500 text-white">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-lg font-bold">{profile.hoursGoal || 10}h/wk</div>
+                <div className="text-xs text-muted-foreground">Study Goal</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl bg-secondary/50 p-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-amber-500 text-white">
+                <Star className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-lg font-bold">4.9 ★</div>
+                <div className="text-xs text-muted-foreground">Peer Rating</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 rounded-2xl bg-secondary/50 p-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-500 text-white">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="text-lg font-bold">{batchMates.length} Peers</div>
+                <div className="text-xs text-muted-foreground">Batch Mates</div>
+              </div>
+            </div>
+          </div>
         </div>
       </Card>
 
-      <Tabs defaultValue="overview">
-        <TabsList className="rounded-md">
-          <TabsTrigger value="overview" className="rounded-sm">
-            Overview
+      {/* Profile Tabs */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="rounded-2xl bg-secondary/60 p-1 flex-wrap h-auto">
+          <TabsTrigger value="overview" className="rounded-xl text-xs font-semibold">
+            Overview & Bio
           </TabsTrigger>
-          <TabsTrigger value="credits" className="rounded-sm">
-            Credits
+          <TabsTrigger value="education" className="rounded-xl text-xs font-semibold">
+            Education History ({eduList.length})
           </TabsTrigger>
-          <TabsTrigger value="teaching" className="rounded-sm">
-            Teaching
+          <TabsTrigger value="batchmates" className="rounded-xl text-xs font-semibold">
+            Batch Mates ({batchMates.length})
           </TabsTrigger>
-          <TabsTrigger value="badges" className="rounded-sm">
+          <TabsTrigger value="credits" className="rounded-xl text-xs font-semibold">
+            Credits Log
+          </TabsTrigger>
+          <TabsTrigger value="teaching" className="rounded-xl text-xs font-semibold">
+            Teaching Hours
+          </TabsTrigger>
+          <TabsTrigger value="badges" className="rounded-xl text-xs font-semibold">
             Badges
           </TabsTrigger>
-          <TabsTrigger value="reviews" className="rounded-sm">
-            Public reviews
+          <TabsTrigger value="reviews" className="rounded-xl text-xs font-semibold">
+            Public Reviews ({reviewsList.length})
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="mt-4 grid gap-4 md:grid-cols-2">
-          <Card className="rounded-lg border-border p-5 shadow-soft">
-            <h3 className="mb-3 font-semibold">Subjects I can teach</h3>
-            <p className="text-sm text-muted-foreground">
-              Add subjects from Settings — anything from algebra to guitar.
-            </p>
+
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="mt-4 grid gap-4 md:grid-cols-3">
+          <Card className="md:col-span-2 rounded-2xl border-border p-6 shadow-soft space-y-4">
+            <div>
+              <h3 className="text-base font-semibold tracking-tight mb-2 flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-primary" />
+                About Me
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                {profile.about ||
+                  "Passionate computer science undergrad exploring distributed systems, machine learning, and collaborative peer learning. Always up for study sessions and exchange of study notes!"}
+              </p>
+            </div>
+
+            <div className="border-t border-border pt-4 grid sm:grid-cols-2 gap-4">
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+                  Subjects I Can Teach
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {(profile.teach || ["Python Basics", "Data Structures", "Linear Algebra"]).map(
+                    (sub) => (
+                      <Badge key={sub} variant="secondary" className="rounded-lg">
+                        {sub}
+                      </Badge>
+                    ),
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-xs font-semibold uppercase text-muted-foreground mb-2">
+                  Topics I Want To Learn
+                </h4>
+                <div className="flex flex-wrap gap-1.5">
+                  {(profile.learn || ["Operating Systems", "React 19", "AI Model Grounding"]).map(
+                    (top) => (
+                      <Badge
+                        key={top}
+                        variant="outline"
+                        className="rounded-lg border-primary/30 text-primary"
+                      >
+                        {top}
+                      </Badge>
+                    ),
+                  )}
+                </div>
+              </div>
+            </div>
           </Card>
-          <Card className="rounded-lg border-border p-5 shadow-soft">
-            <h3 className="mb-3 font-semibold">Topics I want to learn</h3>
-            <p className="text-sm text-muted-foreground">
-              List what you're working on so peers can find you.
-            </p>
+
+          {/* Profile Quick Details Sidebar */}
+          <Card className="rounded-2xl border-border p-6 shadow-soft space-y-4">
+            <h3 className="text-base font-semibold tracking-tight border-b border-border pb-3">
+              Academic Details
+            </h3>
+
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-xs text-muted-foreground block">Grade / Class Level</span>
+                <span className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                  <GraduationCap className="h-4 w-4 text-primary" />
+                  {profile.gradeLevel || "Undergraduate"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-muted-foreground block">Institution / School</span>
+                <span className="font-semibold text-foreground flex items-center gap-1.5 mt-0.5">
+                  <Building2 className="h-4 w-4 text-primary" />
+                  {profile.institution || "Stanford University"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-muted-foreground block">Semester / Class Year</span>
+                <span className="font-semibold text-foreground mt-0.5 block">
+                  {profile.semesterOrYear || "Semester 4"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-muted-foreground block">Degree / Stream</span>
+                <span className="font-semibold text-foreground mt-0.5 block">
+                  {profile.degreeOrStream || "BS Computer Science"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-xs text-muted-foreground block">Location & Timezone</span>
+                <span className="font-semibold text-foreground mt-0.5 block">
+                  {profile.country || "United States"} · {profile.timezone || "UTC-5 (EST)"}
+                </span>
+              </div>
+            </div>
           </Card>
         </TabsContent>
+
+        {/* Education History Tab */}
+        <TabsContent value="education" className="mt-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">Education Timeline</h2>
+              <p className="text-xs text-muted-foreground">
+                Your past and current educational background.
+              </p>
+            </div>
+            <Button
+              onClick={() => setIsAddEduModalOpen(true)}
+              className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
+            >
+              <Plus className="mr-1.5 h-4 w-4" /> Add Education
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {eduList.map((edu) => (
+              <Card key={edu.id} className="rounded-2xl border-border p-5 shadow-soft">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-11 w-11 place-items-center rounded-xl bg-primary/10 text-primary shrink-0">
+                      <GraduationCap className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-base">{edu.institution}</h3>
+                        <Badge variant="secondary" className="rounded-md text-[10px]">
+                          {edu.status}
+                        </Badge>
+                      </div>
+                      <p className="text-sm font-medium text-foreground mt-0.5">
+                        {edu.degreeOrClass} {edu.streamOrMajor ? `(${edu.streamOrMajor})` : ""}
+                      </p>
+                      <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5" />
+                          {edu.startYear} – {edu.endYear}
+                        </span>
+                        {edu.gradeLevel && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {edu.gradeLevel}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={() => handleDeleteEdu(edu.id)}
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* Batch Mates Tab */}
+        <TabsContent value="batchmates" className="mt-4 space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold tracking-tight">University & Batch Mates</h2>
+            <p className="text-xs text-muted-foreground">
+              Peers from {profile.institution || "your university"} and matching academic streams.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {batchMates.map((b) => (
+              <Card key={b.id} className="rounded-2xl border-border p-5 shadow-soft">
+                <div className="flex items-center gap-3 mb-3">
+                  <Avatar className="h-12 w-12">
+                    <AvatarImage src={b.avatar} />
+                    <AvatarFallback>{b.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">{b.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">{b.uni}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-secondary/50 p-3 text-xs space-y-1 mb-3">
+                  <div className="font-semibold text-foreground">Topic: {b.topic}</div>
+                  <div className="text-muted-foreground">Timezone: {b.tz}</div>
+                </div>
+
+                <Button
+                  onClick={() => toast.success(`Connected with ${b.name}!`)}
+                  className="w-full rounded-xl bg-gradient-primary text-primary-foreground"
+                >
+                  <MessageSquare className="mr-1.5 h-4 w-4" /> Connect & Study
+                </Button>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+
+        {/* Credits Log Tab */}
         <TabsContent value="credits" className="mt-4">
-          <Card className="rounded-lg border-border p-2 shadow-soft">
+          <Card className="rounded-2xl border-border p-3 shadow-soft">
             {creditsHistory.map((c) => (
               <div
                 key={c.id}
-                className="flex items-center justify-between rounded-md p-3 hover:bg-secondary"
+                className="flex items-center justify-between rounded-xl p-3 hover:bg-secondary/50 transition"
               >
                 <div>
                   <div className="text-sm font-medium">{c.reason}</div>
                   <div className="text-xs text-muted-foreground">{c.time}</div>
                 </div>
                 <div
-                  className={`text-sm font-bold ${c.type === "earn" ? "text-success" : "text-destructive"}`}
+                  className={`text-sm font-bold ${
+                    c.type === "earn" ? "text-emerald-600" : "text-destructive"
+                  }`}
                 >
-                  {c.type === "earn" ? "+" : ""}
-                  {c.amount}
+                  {c.type === "earn" ? "+" : "-"}
+                  {c.amount} credits
                 </div>
               </div>
             ))}
           </Card>
         </TabsContent>
+
+        {/* Teaching Tab */}
         <TabsContent value="teaching" className="mt-4">
-          <Card className="rounded-lg border-border p-8 text-center text-muted-foreground shadow-soft">
-            Teaching history will appear here.
+          <Card className="rounded-2xl border-border p-8 text-center text-muted-foreground shadow-soft">
+            <Clock className="mx-auto h-8 w-8 text-muted-foreground mb-2" />
+            <p className="text-sm font-medium">
+              Teaching history and logged tutor hours will appear here.
+            </p>
           </Card>
         </TabsContent>
+
+        {/* Badges Tab */}
         <TabsContent value="badges" className="mt-4 grid gap-3 sm:grid-cols-3">
           {achievements
             .filter((a) => a.earned)
             .map((a) => (
-              <Card key={a.id} className="rounded-lg border-border p-4 text-center shadow-soft">
-                <div className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-primary text-primary-foreground">
+              <Card key={a.id} className="rounded-2xl border-border p-5 text-center shadow-soft">
+                <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-gradient-primary text-primary-foreground font-bold text-lg mb-2">
                   ✦
                 </div>
-                <div className="mt-2 text-sm font-semibold">{a.name}</div>
+                <div className="text-sm font-semibold">{a.name}</div>
+                <div className="text-xs text-muted-foreground mt-1">Unlocked achievement badge</div>
               </Card>
             ))}
         </TabsContent>
-        <TabsContent value="reviews" className="mt-4">
-          <PublicReviews />
+
+        {/* Public Reviews Tab */}
+        <TabsContent value="reviews" className="mt-4 space-y-4">
+          <Card className="rounded-2xl border-border p-5 shadow-soft flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-display text-3xl font-bold">4.9</span>
+                <div className="flex">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star key={n} className="h-4 w-4 fill-amber-400 text-amber-400" />
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {reviewsList.length} reviews from peers and study buddies
+              </p>
+            </div>
+            <Button onClick={() => setIsLeaveReviewOpen(true)} className="rounded-xl">
+              Leave a Review
+            </Button>
+          </Card>
+
+          {reviewsList.map((r) => (
+            <Card key={r.id} className="rounded-2xl border-border p-5 shadow-soft">
+              <div className="flex items-center justify-between mb-2">
+                <div className="font-semibold text-sm">{r.name}</div>
+                <div className="flex">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star
+                      key={n}
+                      className={`h-3.5 w-3.5 ${
+                        n <= r.rating ? "fill-amber-400 text-amber-400" : "text-muted-foreground/30"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">{r.text}</p>
+            </Card>
+          ))}
         </TabsContent>
       </Tabs>
-    </div>
-  );
-}
 
-function PublicReviews() {
-  const reviews = [
-    {
-      id: "r1",
-      name: "Learner",
-      role: "student",
-      rating: 5,
-      text: "Cleared up transformers in one session. Kept the pace right and shared great notes.",
-      time: "3d",
-    },
-    {
-      id: "r2",
-      name: "Learner",
-      role: "student",
-      rating: 5,
-      text: "Patient with the basics. Zoom session was well-prepared with slides and exercises.",
-      time: "1w",
-    },
-    {
-      id: "r3",
-      name: "Peer",
-      role: "tutor",
-      rating: 4,
-      text: "Asked thoughtful questions in async Q&A — enjoyable to teach.",
-      time: "2w",
-    },
-  ];
-  const avg = reviews.reduce((s, r) => s + r.rating, 0) / reviews.length;
-  return (
-    <div className="space-y-4">
-      <Card className="rounded-lg border-border p-5 shadow-soft">
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="font-display text-3xl font-medium">{avg.toFixed(1)}</div>
-              <div className="flex">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <Star
-                    key={n}
-                    className={`h-4 w-4 ${n <= Math.round(avg) ? "fill-warning text-warning" : "text-muted-foreground/40"}`}
+      {/* Edit Profile Dialog */}
+      <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
+        <DialogContent className="sm:max-w-xl rounded-3xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Profile & Student Credentials</DialogTitle>
+            <DialogDescription>
+              Complete your profile details so AI and peers tailor learning to your exact level.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSaveProfile} className="space-y-4 py-2">
+            <div>
+              <Label className="text-xs font-semibold">Full Name</Label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                className="rounded-xl mt-1"
+                required
+              />
+            </div>
+
+            {/* Clear Face Picture Selection */}
+            <div>
+              <Label className="text-xs font-semibold mb-1.5 block">
+                Clear Face Picture (Avatar)
+              </Label>
+              <div className="flex items-center gap-3 mb-2">
+                <Avatar className="h-16 w-16 border-2 border-primary">
+                  <AvatarImage src={editAvatar} />
+                  <AvatarFallback>AV</AvatarFallback>
+                </Avatar>
+                <div className="flex-1 space-y-1">
+                  <Input
+                    value={editAvatar}
+                    onChange={(e) => setEditAvatar(e.target.value)}
+                    placeholder="Enter image URL or select preset below..."
+                    className="rounded-xl text-xs"
                   />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Select Preset:</span>
+                {PRESET_AVATARS.map((url, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setEditAvatar(url)}
+                    className={`h-8 w-8 rounded-full overflow-hidden border-2 transition ${
+                      editAvatar === url
+                        ? "border-primary ring-2 ring-primary/40"
+                        : "border-transparent"
+                    }`}
+                  >
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
                 ))}
               </div>
             </div>
-            <div className="text-xs text-muted-foreground">
-              {reviews.length} public reviews · visible to every learner and tutor on Cortex
+
+            {/* Cover Banner Selection */}
+            <div>
+              <Label className="text-xs font-semibold mb-1.5 block">Cover Banner Image</Label>
+              <div className="flex items-center gap-2 mb-2">
+                {PRESET_COVERS.map((url, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setEditCover(url)}
+                    className={`h-12 flex-1 rounded-xl overflow-hidden border-2 transition ${
+                      editCover === url ? "border-primary ring-2 ring-primary/40" : "border-border"
+                    }`}
+                  >
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <Button variant="outline" className="rounded-md">
-            Leave a review
-          </Button>
-        </div>
-      </Card>
-      {reviews.map((r) => (
-        <Card key={r.id} className="rounded-lg border-border p-5 shadow-soft">
-          <div className="mb-2 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="grid h-9 w-9 place-items-center rounded-md bg-secondary text-xs font-semibold">
-                {r.name.slice(0, 2).toUpperCase()}
+
+            {/* Academic Level Dropdown */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Grade / Class Level *</Label>
+                <Select value={editGrade} onValueChange={(v) => setEditGrade(v as GradeLevel)}>
+                  <SelectTrigger className="rounded-xl mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Matric">Matric (8th - 10th Grade)</SelectItem>
+                    <SelectItem value="Intermediate">Intermediate (FSc / A-Levels)</SelectItem>
+                    <SelectItem value="Undergraduate">Undergraduate (Bachelor's)</SelectItem>
+                    <SelectItem value="Graduate">Graduate (Master's)</SelectItem>
+                    <SelectItem value="Mphil">Mphil (Post-Graduate)</SelectItem>
+                    <SelectItem value="Phd">Phd (Doctoral / Research)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Institution / University *</Label>
+                <Input
+                  value={editInst}
+                  onChange={(e) => setEditInst(e.target.value)}
+                  placeholder="e.g. Stanford University or Lincoln High"
+                  className="rounded-xl mt-1"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Semester / Year *</Label>
+                <Input
+                  value={editSem}
+                  onChange={(e) => setEditSem(e.target.value)}
+                  placeholder="e.g. Semester 4 or Class 10"
+                  className="rounded-xl mt-1"
+                />
+              </div>
+
+              <div>
+                <Label className="text-xs font-semibold">Degree OR Science/Arts Stream *</Label>
+                <Input
+                  value={editDeg}
+                  onChange={(e) => setEditDeg(e.target.value)}
+                  placeholder="e.g. BS Computer Science OR Science Stream"
+                  className="rounded-xl mt-1"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">About / Bio</Label>
+              <Textarea
+                value={editAbout}
+                onChange={(e) => setEditAbout(e.target.value)}
+                placeholder="Share your learning goals, interest, or study schedule..."
+                rows={3}
+                className="rounded-xl mt-1"
+              />
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Country</Label>
+                <Input
+                  value={editCountry}
+                  onChange={(e) => setEditCountry(e.target.value)}
+                  className="rounded-xl mt-1"
+                />
               </div>
               <div>
-                <div className="text-sm font-semibold">{r.name}</div>
-                <div className="text-[11px] text-muted-foreground capitalize">
-                  {r.role} · {r.time} ago
-                </div>
+                <Label className="text-xs font-semibold">Timezone</Label>
+                <Select value={editTimezone} onValueChange={setEditTimezone}>
+                  <SelectTrigger className="rounded-xl mt-1">
+                    <SelectValue placeholder="Select Timezone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="UTC+5 (PST, Pakistan Standard Time)">
+                      UTC+5 (PST, Pakistan Standard Time)
+                    </SelectItem>
+                    <SelectItem value="UTC-5 (EST)">UTC-5 (EST, Eastern Standard Time)</SelectItem>
+                    <SelectItem value="UTC-8 (PST)">UTC-8 (PST, Pacific Standard Time)</SelectItem>
+                    <SelectItem value="UTC+0 (GMT)">UTC+0 (GMT, Greenwich Mean Time)</SelectItem>
+                    <SelectItem value="UTC+1 (CET)">UTC+1 (CET, Central European Time)</SelectItem>
+                    <SelectItem value="UTC+5:30 (IST)">
+                      UTC+5:30 (IST, Indian Standard Time)
+                    </SelectItem>
+                    <SelectItem value="UTC+8 (SGT)">UTC+8 (SGT, Singapore Time)</SelectItem>
+                    <SelectItem value="UTC+9 (JST)">UTC+9 (JST, Japan Standard Time)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
-            <div className="flex">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Star
-                  key={n}
-                  className={`h-3.5 w-3.5 ${n <= r.rating ? "fill-warning text-warning" : "text-muted-foreground/40"}`}
-                />
-              ))}
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsEditModalOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
+              >
+                Save Profile Changes
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Education Modal */}
+      <Dialog open={isAddEduModalOpen} onOpenChange={setIsAddEduModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Add Education History</DialogTitle>
+            <DialogDescription>
+              Add past or current school, college, or university entries.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleAddEducation} className="space-y-3 py-1">
+            <div>
+              <Label className="text-xs font-semibold">School / University Name *</Label>
+              <Input
+                value={newEduInst}
+                onChange={(e) => setNewEduInst(e.target.value)}
+                placeholder="e.g. Harvard University"
+                className="rounded-xl mt-1"
+                required
+              />
             </div>
-          </div>
-          <p className="text-sm text-muted-foreground">{r.text}</p>
-        </Card>
-      ))}
+
+            <div>
+              <Label className="text-xs font-semibold">Degree / Class *</Label>
+              <Input
+                value={newEduDeg}
+                onChange={(e) => setNewEduDeg(e.target.value)}
+                placeholder="e.g. BS Computer Science or Matric Science"
+                className="rounded-xl mt-1"
+                required
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs font-semibold">Start Year</Label>
+                <Input
+                  value={newEduStartYear}
+                  onChange={(e) => setNewEduStartYear(e.target.value)}
+                  className="rounded-xl mt-1"
+                />
+              </div>
+              <div>
+                <Label className="text-xs font-semibold">End Year (or Expected)</Label>
+                <Input
+                  value={newEduEndYear}
+                  onChange={(e) => setNewEduEndYear(e.target.value)}
+                  className="rounded-xl mt-1"
+                />
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsAddEduModalOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
+              >
+                Add Education
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Leave Review Dialog */}
+      <Dialog open={isLeaveReviewOpen} onOpenChange={setIsLeaveReviewOpen}>
+        <DialogContent className="sm:max-w-md rounded-3xl">
+          <DialogHeader>
+            <DialogTitle>Leave a Public Review</DialogTitle>
+            <DialogDescription>
+              Share feedback regarding your study session experience.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleLeaveReview} className="space-y-3 py-1">
+            <div>
+              <Label className="text-xs font-semibold mb-1 block">Rating (1 to 5 Stars)</Label>
+              <div className="flex gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button key={n} type="button" onClick={() => setReviewRating(n)} className="p-1">
+                    <Star
+                      className={`h-6 w-6 ${
+                        n <= reviewRating
+                          ? "fill-amber-400 text-amber-400"
+                          : "text-muted-foreground/30"
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label className="text-xs font-semibold">Feedback Comment</Label>
+              <Textarea
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
+                placeholder="Great explanation of the concepts..."
+                rows={3}
+                className="rounded-xl mt-1"
+                required
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsLeaveReviewOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
+              >
+                Submit Review
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

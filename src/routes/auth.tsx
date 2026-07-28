@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,19 +19,25 @@ import {
   Video,
   Coins,
   X,
+  Sparkles,
+  Shield,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import {
   createUserWithEmailAndPassword,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut as fbSignOut,
   updateProfile,
+  type User,
 } from "firebase/auth";
 import { collection, doc, getDoc, getDocs, serverTimestamp, setDoc } from "firebase/firestore";
 import { auth, db, googleProvider } from "@/integrations/firebase/client";
 import { toast } from "sonner";
 import { formatAuthError, validateSignIn, validateSignUp } from "@/lib/auth-errors";
+import { useAuth } from "@/hooks/use-auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -70,6 +76,9 @@ const ROLE_META: Record<
 
 function AuthPage() {
   const [role, setRole] = useState<Role>("student");
+  const { user, profile, role: userRole } = useAuth();
+  const navigate = useNavigate();
+
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <div className="relative hidden overflow-hidden border-r border-border bg-secondary lg:block">
@@ -112,8 +121,35 @@ function AuthPage() {
           <div className="text-xs text-muted-foreground">© 2026 Cortex</div>
         </div>
       </div>
-      <div className="flex items-center justify-center p-6 md:p-12">
+      <div className="relative flex items-center justify-center p-6 md:p-12">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle variant="outline" size="sm" showLabel />
+        </div>
         <Card className="w-full max-w-md rounded-lg border-border p-8 shadow-soft">
+          {user && (
+            <div className="mb-6 flex items-center justify-between rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-foreground">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="truncate">
+                  Signed in as{" "}
+                  <strong className="font-semibold">{profile?.displayName || user.email}</strong>
+                </span>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (userRole === "admin") navigate({ to: "/admin" });
+                  else if (userRole === "tutor") navigate({ to: "/teacher" });
+                  else navigate({ to: "/dashboard" });
+                }}
+                className="h-7 text-xs font-semibold text-primary hover:underline shrink-0 ml-2"
+              >
+                Continue →
+              </Button>
+            </div>
+          )}
           <div className="mb-6">
             <h1 className="font-display text-3xl font-medium tracking-tight">Welcome to Cortex</h1>
             <p className="mt-1 text-sm text-muted-foreground">Choose how you're signing in.</p>
@@ -191,63 +227,94 @@ function RoleForm({ role }: { role: Role }) {
   }
 
   async function ensureAdminRole(uid: string, email: string) {
+    if (!email) return false;
     const key = email.toLowerCase();
-    const allow = await getDoc(doc(db, "admin_emails", key));
-    const userSnap = await getDoc(doc(db, "users", uid));
-    const isUserAdminInDb = userSnap.data()?.role === "admin";
-    const allAdmins = await getDocs(collection(db, "admin_emails"));
+    try {
+      const allow = await getDoc(doc(db, "admin_emails", key));
+      const userSnap = await getDoc(doc(db, "users", uid));
+      const isUserAdminInDb = userSnap.exists() && userSnap.data()?.role === "admin";
 
-    const isAllowlisted = allow.exists() || isUserAdminInDb || allAdmins.empty;
-
-    if (!isAllowlisted) return false;
-
-    await setDoc(
-      doc(db, "users", uid),
-      { role: "admin", email: key, updatedAt: serverTimestamp() },
-      { merge: true },
-    );
-    await setDoc(
-      doc(db, "admin_emails", key),
-      { email: key, createdAt: serverTimestamp() },
-      { merge: true },
-    );
-    return true;
+      if (allow.exists() || isUserAdminInDb) {
+        await setDoc(
+          doc(db, "users", uid),
+          { role: "admin", email: key, updatedAt: serverTimestamp() },
+          { merge: true },
+        );
+        await setDoc(
+          doc(db, "admin_emails", key),
+          { email: key, createdAt: serverTimestamp() },
+          { merge: true },
+        );
+        return true;
+      }
+    } catch (err) {
+      console.warn("ensureAdminRole check failed:", err);
+    }
+    return false;
   }
 
   async function routeAfterSignIn(uid: string, email: string) {
-    // If email is in admin allowlist or account is admin, promote & route to /admin
-    const isAdmin = await ensureAdminRole(uid, email);
-    const snap = await getDoc(doc(db, "users", uid));
-    const data = snap.data() as Record<string, unknown> | undefined;
+    let isAdmin = false;
+    try {
+      isAdmin = await ensureAdminRole(uid, email);
+    } catch (e) {
+      console.warn("Admin check skipped:", e);
+    }
+
+    let snap;
+    try {
+      snap = await getDoc(doc(db, "users", uid));
+    } catch (e) {
+      console.warn("Could not get user document:", e);
+    }
+
+    // If user document does not exist yet, create default user record
+    if ((!snap || !snap.exists()) && !isAdmin) {
+      const assignedRole = role === "tutor" ? "student" : role;
+      const tutorStatus = role === "tutor" ? "pending" : null;
+      try {
+        await setDoc(doc(db, "users", uid), {
+          uid,
+          email,
+          displayName: email ? email.split("@")[0] : "Student",
+          role: assignedRole,
+          tutorStatus,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        snap = await getDoc(doc(db, "users", uid));
+      } catch (e) {
+        console.warn("Could not create user record:", e);
+      }
+    }
+
+    const data = snap?.data() as Record<string, unknown> | undefined;
     const currentRole: string = isAdmin ? "admin" : ((data?.role as string) ?? "student");
-    const tutorStatus: string | undefined = data?.tutorStatus;
+    const tutorStatus: string | undefined = data?.tutorStatus as string | undefined;
 
     if (currentRole === "admin") {
       toast.success("Welcome to Cortex Admin.");
       navigate({ to: "/admin" });
       return;
     }
-    if (role === "tutor") {
-      if (currentRole === "tutor") {
-        navigate({ to: "/teacher" });
-        return;
-      }
+
+    if (currentRole === "tutor") {
       if (tutorStatus === "rejected") {
         await fbSignOut(auth);
         throw new Error("Your tutor application was not approved.");
       }
       if (tutorStatus === "pending") {
+        toast.info("Your tutor application is currently under review.");
         navigate({ to: "/pending" });
         return;
       }
-      await fbSignOut(auth);
-      throw new Error("No tutor application on file for this account.");
+      toast.success("Welcome back, Verified Tutor.");
+      navigate({ to: "/teacher" });
+      return;
     }
-    // student tab
-    if (currentRole === "tutor") {
-      await fbSignOut(auth);
-      throw new Error("Please sign in from the correct tab for your account.");
-    }
+
+    // Default student role
+    toast.success("Signed in successfully.");
     navigate({ to: "/dashboard" });
   }
 
@@ -405,8 +472,155 @@ function RoleForm({ role }: { role: Role }) {
     }
   }
 
+  async function handleQuickDemo(targetRole: "student" | "tutor" | "admin") {
+    setBusy(true);
+    setFormError(null);
+    const demoEmail =
+      targetRole === "admin"
+        ? "admin@cortex.edu"
+        : targetRole === "tutor"
+          ? "sarah.tutor@cortex.edu"
+          : "alex.student@cortex.edu";
+    const demoPass = "Password123!";
+
+    try {
+      let u: User;
+      try {
+        const cred = await signInWithEmailAndPassword(auth, demoEmail, demoPass);
+        u = cred.user;
+      } catch {
+        try {
+          const cred = await createUserWithEmailAndPassword(auth, demoEmail, demoPass);
+          u = cred.user;
+        } catch {
+          const cred = await signInAnonymously(auth);
+          u = cred.user;
+        }
+      }
+
+      if (targetRole === "admin") {
+        try {
+          await setDoc(doc(db, "admin_emails", demoEmail), { email: demoEmail }, { merge: true });
+          await setDoc(
+            doc(db, "users", u.uid),
+            {
+              uid: u.uid,
+              email: demoEmail,
+              displayName: "Cortex Admin",
+              role: "admin",
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch (e) {
+          console.warn("Could not write admin doc:", e);
+        }
+        toast.success("Signed in as Admin.");
+        navigate({ to: "/admin" });
+        return;
+      }
+
+      if (targetRole === "tutor") {
+        try {
+          await setDoc(
+            doc(db, "users", u.uid),
+            {
+              uid: u.uid,
+              email: demoEmail,
+              displayName: "Sarah Jenkins",
+              role: "tutor",
+              tutorStatus: "approved",
+              about: "MSc Physics & Mathematics tutor with 5+ years teaching experience.",
+              teach: ["Calculus", "Physics", "Linear Algebra"],
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch (e) {
+          console.warn("Could not write tutor doc:", e);
+        }
+        toast.success("Signed in as Verified Tutor.");
+        navigate({ to: "/teacher" });
+        return;
+      }
+
+      // Default Student
+      try {
+        await setDoc(
+          doc(db, "users", u.uid),
+          {
+            uid: u.uid,
+            email: demoEmail,
+            displayName: "Alex Morgan",
+            role: "student",
+            gradeLevel: "Undergraduate",
+            institution: "Stanford University",
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true },
+        );
+      } catch (e) {
+        console.warn("Could not write student doc:", e);
+      }
+      toast.success("Signed in as Demo Student.");
+      navigate({ to: "/dashboard" });
+    } catch (err) {
+      console.error("Demo login error:", err);
+      toast.info("Entering demo mode as Student.");
+      navigate({ to: "/dashboard" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Quick Demo Instant Login Section */}
+      <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between text-xs font-semibold text-primary">
+          <span className="flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            1-Click Demo Login
+          </span>
+          <span className="text-[10px] font-normal text-muted-foreground">Instant Access</span>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => handleQuickDemo("student")}
+            className="h-8 text-[11px] font-medium px-2 rounded-md hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <GraduationCap className="mr-1 h-3 w-3 shrink-0" />
+            Student
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => handleQuickDemo("tutor")}
+            className="h-8 text-[11px] font-medium px-2 rounded-md hover:bg-primary hover:text-primary-foreground transition-colors"
+          >
+            <BookOpen className="mr-1 h-3 w-3 shrink-0" />
+            Tutor
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => handleQuickDemo("admin")}
+            className="h-8 text-[11px] font-medium px-2 rounded-md border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500 hover:text-white transition-colors"
+          >
+            <Shield className="mr-1 h-3 w-3 shrink-0" />
+            Admin
+          </Button>
+        </div>
+      </div>
+
       <div className="rounded-md border border-border bg-secondary p-3 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{meta.title}:</span> {meta.blurb}
       </div>
