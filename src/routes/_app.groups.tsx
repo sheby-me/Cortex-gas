@@ -66,6 +66,7 @@ export function GroupsPage() {
   const [newSubject, setNewSubject] = useState("Computer Science");
   const [newDesc, setNewDesc] = useState("");
   const [newSchedule, setNewSchedule] = useState("Weekly on Mondays at 6:00 PM");
+  const [invitedUsernames, setInvitedUsernames] = useState("");
 
   // Preview Modal
   const [previewGroup, setPreviewGroup] = useState<GroupItem | null>(null);
@@ -77,11 +78,18 @@ export function GroupsPage() {
       return;
     }
 
+    const handles = invitedUsernames
+      .split(/[\s,]+/)
+      .map((h) => h.trim().replace(/^@/, ""))
+      .filter(Boolean);
+
+    const initialMemberCount = 1 + handles.length;
+
     const newGroup: GroupItem = {
       id: "g_user_" + Date.now(),
       name: newName.trim(),
       subject: newSubject,
-      members: 1,
+      members: initialMemberCount,
       active: "Just created",
       color: "from-blue-600 to-indigo-700",
       joined: true,
@@ -91,10 +99,18 @@ export function GroupsPage() {
 
     setGroupList((prev) => [newGroup, ...prev]);
     setIsCreateModalOpen(false);
-    toast.success(`Study group "${newName}" created successfully!`);
+
+    if (handles.length > 0) {
+      toast.success(
+        `Group "${newName}" created! Invites sent to: ${handles.map((h) => `@${h}`).join(", ")}`,
+      );
+    } else {
+      toast.success(`Study group "${newName}" created successfully!`);
+    }
 
     setNewName("");
     setNewDesc("");
+    setInvitedUsernames("");
   };
 
   const handleToggleJoin = (groupId: string, groupName: string) => {
@@ -254,6 +270,21 @@ export function GroupsPage() {
                 placeholder="e.g. Weekly on Tuesdays at 7:00 PM"
                 className="rounded-xl"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Invite Members & Study Buddies (@usernames)
+              </label>
+              <Input
+                value={invitedUsernames}
+                onChange={(e) => setInvitedUsernames(e.target.value)}
+                placeholder="e.g. @rahul_verma, @elena_rostova, @ken_watanabe"
+                className="rounded-xl font-mono text-xs"
+              />
+              <span className="text-[10px] text-muted-foreground block mt-0.5">
+                Separate unique IDs or usernames with commas
+              </span>
             </div>
 
             <div>

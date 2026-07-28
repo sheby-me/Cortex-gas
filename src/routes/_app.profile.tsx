@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +42,8 @@ import {
   Sparkles,
   MessageSquare,
   Upload,
+  Camera,
+  Image as ImageIcon,
 } from "lucide-react";
 import { creditsHistory, achievements, buddies } from "@/lib/mock-data";
 import {
@@ -100,6 +102,82 @@ export function ProfilePage() {
   const [editAbout, setEditAbout] = useState(profile.about || "");
   const [editCountry, setEditCountry] = useState(profile.country || "");
   const [editTimezone, setEditTimezone] = useState(profile.timezone || "");
+
+  // Local Storage File Upload Refs
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
+
+  const handleAvatarFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("File size must be under 8MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setEditAvatar(dataUrl);
+        toast.success("Profile picture loaded from local storage!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleCoverFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Cover image size must be under 10MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setEditCover(dataUrl);
+        toast.success("Cover banner image loaded from local storage!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDirectHeaderAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("File size must be under 8MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        await updateProfile({ avatarUrl: dataUrl });
+        toast.success("Profile picture updated from local storage!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleDirectHeaderCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Cover image size must be under 10MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        await updateProfile({ coverImageUrl: dataUrl });
+        toast.success("Cover banner updated from local storage!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Education History State
   const [eduList, setEduList] = useState<EducationEntry[]>(
@@ -262,29 +340,63 @@ export function ProfilePage() {
       {/* Profile Header Banner */}
       <Card className="mb-6 overflow-hidden rounded-3xl border-border p-0 shadow-soft bg-background">
         <div
-          className="h-44 md:h-52 w-full bg-cover bg-center relative transition-all"
+          className="h-44 md:h-52 w-full bg-cover bg-center relative transition-all group"
           style={{
             backgroundImage: `url(${profile.coverImageUrl || PRESET_COVERS[0]})`,
           }}
         >
           <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/30 to-transparent" />
+
+          {/* Quick upload cover banner button */}
+          <label className="absolute top-3 right-3 cursor-pointer z-10 bg-background/80 hover:bg-background text-foreground text-xs font-medium px-3 py-1.5 rounded-xl border border-border shadow-soft transition flex items-center gap-1.5 backdrop-blur-md">
+            <Camera className="h-3.5 w-3.5 text-primary" />
+            <span>Upload Cover Banner</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleDirectHeaderCoverUpload}
+            />
+          </label>
         </div>
 
         <div className="p-6 relative pt-0">
           <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 -mt-16 md:-mt-20 mb-4">
             <div className="flex items-end gap-4">
-              <Avatar className="h-28 w-28 md:h-32 md:w-32 border-4 border-background shadow-elegant rounded-3xl">
-                <AvatarImage src={profile.avatarUrl || user?.photoURL || PRESET_AVATARS[0]} />
-                <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
-                  {(profile.displayName || "S").slice(0, 2).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
+              <div className="relative group">
+                <Avatar className="h-28 w-28 md:h-32 md:w-32 border-4 border-background shadow-elegant rounded-3xl">
+                  <AvatarImage src={profile.avatarUrl || user?.photoURL || PRESET_AVATARS[0]} />
+                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl font-bold">
+                    {(profile.displayName || "S").slice(0, 2).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+
+                {/* Quick upload avatar overlay button */}
+                <label className="absolute inset-0 bg-black/40 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white cursor-pointer z-10">
+                  <Camera className="h-6 w-6 mb-1 drop-shadow" />
+                  <span className="text-[10px] font-semibold tracking-wide uppercase bg-black/60 px-2 py-0.5 rounded-full">
+                    Upload
+                  </span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleDirectHeaderAvatarUpload}
+                  />
+                </label>
+              </div>
 
               <div className="pb-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="font-display text-3xl md:text-4xl font-medium tracking-tight">
                     {profile.displayName || "Alex Morgan"}
                   </h1>
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-xs px-2.5 py-0.5 border-primary/30 text-primary bg-primary/5"
+                  >
+                    @{profile.username || "alex_morgan"}
+                  </Badge>
                   <Badge className="bg-gradient-primary text-primary-foreground border-0 font-medium px-3 py-1 text-xs">
                     <GraduationCap className="mr-1 h-3.5 w-3.5" />
                     {profile.gradeLevel || "Undergraduate"}
@@ -750,25 +862,38 @@ export function ProfilePage() {
 
             {/* Clear Face Picture Selection */}
             <div>
-              <Label className="text-xs font-semibold mb-1.5 block">
-                Clear Face Picture (Avatar)
-              </Label>
+              <Label className="text-xs font-semibold mb-1.5 block">Profile Picture (Avatar)</Label>
               <div className="flex items-center gap-3 mb-2">
-                <Avatar className="h-16 w-16 border-2 border-primary">
+                <Avatar className="h-16 w-16 border-2 border-primary shrink-0 shadow-sm">
                   <AvatarImage src={editAvatar} />
-                  <AvatarFallback>AV</AvatarFallback>
+                  <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                    AV
+                  </AvatarFallback>
                 </Avatar>
-                <div className="flex-1 space-y-1">
+                <div className="flex-1 space-y-1.5">
+                  <div className="flex items-center gap-2">
+                    <label className="cursor-pointer inline-flex items-center justify-center h-8 px-3 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-soft transition gap-1.5">
+                      <Upload className="h-3.5 w-3.5" />
+                      Upload Picture from Device
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleAvatarFileUpload}
+                      />
+                    </label>
+                  </div>
                   <Input
                     value={editAvatar}
                     onChange={(e) => setEditAvatar(e.target.value)}
-                    placeholder="Enter image URL or select preset below..."
-                    className="rounded-xl text-xs"
+                    placeholder="OR paste image URL..."
+                    className="rounded-xl text-xs h-8"
                   />
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-muted-foreground">Select Preset:</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-muted-foreground">Or pick preset:</span>
                 {PRESET_AVATARS.map((url, i) => (
                   <button
                     key={i}
@@ -776,8 +901,8 @@ export function ProfilePage() {
                     onClick={() => setEditAvatar(url)}
                     className={`h-8 w-8 rounded-full overflow-hidden border-2 transition ${
                       editAvatar === url
-                        ? "border-primary ring-2 ring-primary/40"
-                        : "border-transparent"
+                        ? "border-primary ring-2 ring-primary/40 scale-105"
+                        : "border-transparent opacity-70 hover:opacity-100"
                     }`}
                   >
                     <img src={url} alt="" className="h-full w-full object-cover" />
@@ -789,14 +914,39 @@ export function ProfilePage() {
             {/* Cover Banner Selection */}
             <div>
               <Label className="text-xs font-semibold mb-1.5 block">Cover Banner Image</Label>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="space-y-2 mb-2">
+                <div className="relative h-20 w-full rounded-2xl overflow-hidden border border-border bg-muted shadow-inner">
+                  <img src={editCover} alt="Cover preview" className="h-full w-full object-cover" />
+                  <label className="absolute bottom-2 right-2 cursor-pointer inline-flex items-center gap-1.5 bg-background/90 hover:bg-background text-foreground text-xs font-medium px-2.5 py-1 rounded-xl border border-border shadow-soft transition backdrop-blur-md">
+                    <Upload className="h-3.5 w-3.5 text-primary" />
+                    <span>Upload Banner from Device</span>
+                    <input
+                      ref={coverInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCoverFileUpload}
+                    />
+                  </label>
+                </div>
+                <Input
+                  value={editCover}
+                  onChange={(e) => setEditCover(e.target.value)}
+                  placeholder="OR paste cover banner URL..."
+                  className="rounded-xl text-xs h-8"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-muted-foreground">Or pick preset banner:</span>
                 {PRESET_COVERS.map((url, i) => (
                   <button
                     key={i}
                     type="button"
                     onClick={() => setEditCover(url)}
-                    className={`h-12 flex-1 rounded-xl overflow-hidden border-2 transition ${
-                      editCover === url ? "border-primary ring-2 ring-primary/40" : "border-border"
+                    className={`h-10 flex-1 rounded-xl overflow-hidden border-2 transition ${
+                      editCover === url
+                        ? "border-primary ring-2 ring-primary/40 scale-102"
+                        : "border-border opacity-70 hover:opacity-100"
                     }`}
                   >
                     <img src={url} alt="" className="h-full w-full object-cover" />

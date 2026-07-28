@@ -40,6 +40,7 @@ interface CommentItem {
 interface PostItem {
   id: string;
   author: string;
+  authorUsername?: string;
   avatar?: string;
   time: string;
   subject: string;
@@ -55,20 +56,30 @@ interface PostItem {
 
 export function CommunityPage() {
   const [postList, setPostList] = useState<PostItem[]>(
-    initialPosts.map((p) => ({
-      ...p,
-      liked: false,
-      saved: false,
-      commentsCount: p.comments,
-      commentsList: [
-        {
-          id: "c1",
-          author: "Alex Rivers",
-          time: "1h ago",
-          body: "Great point! I recommend checking chapter 4 in the textbook for a similar example.",
-        },
-      ],
-    })),
+    initialPosts.map((p, idx) => {
+      const sampleHandles = [
+        "alex_rivers",
+        "sophia_chen",
+        "dr_sana",
+        "ken_watanabe",
+        "rahul_verma",
+      ];
+      return {
+        ...p,
+        authorUsername: sampleHandles[idx % sampleHandles.length],
+        liked: false,
+        saved: false,
+        commentsCount: p.comments,
+        commentsList: [
+          {
+            id: "c1",
+            author: "Alex Rivers",
+            time: "1h ago",
+            body: "Great point! I recommend checking chapter 4 in the textbook for a similar example.",
+          },
+        ],
+      };
+    }),
   );
 
   // New Post Form State
@@ -287,6 +298,11 @@ export function CommunityPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2 text-sm">
                       <span className="font-semibold">{p.author}</span>
+                      {p.authorUsername && (
+                        <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium">
+                          @{p.authorUsername}
+                        </span>
+                      )}
                       <span className="text-muted-foreground">· {p.time}</span>
                       <Badge variant="secondary" className="rounded-full text-[10px]">
                         {p.subject}

@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut as fbSignOut } from "firebase/auth";
 import { auth } from "@/integrations/firebase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { getUnreadNotificationCount, NOTIFICATION_EVENT } from "@/lib/notifications-store";
 
 export const Route = createFileRoute("/_app")({
   component: AppLayout,
@@ -23,6 +24,19 @@ function AppLayout() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (r) => r.location.pathname });
   const { user, role, loading } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const updateCount = () => {
+      setUnreadCount(getUnreadNotificationCount());
+    };
+    updateCount();
+
+    if (typeof window !== "undefined") {
+      window.addEventListener(NOTIFICATION_EVENT, updateCount);
+      return () => window.removeEventListener(NOTIFICATION_EVENT, updateCount);
+    }
+  }, []);
 
   useEffect(() => {
     if (loading) return;
@@ -63,9 +77,14 @@ function AppLayout() {
             </div>
             <div className="ml-auto flex items-center gap-2">
               <ThemeToggle />
-              <Button asChild size="sm" variant="ghost" className="rounded-md">
-                <Link to="/notifications">
+              <Button asChild size="sm" variant="ghost" className="rounded-md relative">
+                <Link to="/notifications" title="Notifications">
                   <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 grid h-4 w-4 place-items-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
                 </Link>
               </Button>
               <Button asChild size="sm" className="rounded-md">

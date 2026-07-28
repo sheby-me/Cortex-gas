@@ -160,11 +160,13 @@ export function TutorsPage() {
   });
 
   const filteredMockTutors = mockTutors.filter((t) => {
+    const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
-      !searchQuery.trim() ||
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.university.toLowerCase().includes(searchQuery.toLowerCase());
+      !q ||
+      t.name.toLowerCase().includes(q) ||
+      (t.handle && t.handle.toLowerCase().includes(q.replace(/^@/, ""))) ||
+      t.subject.toLowerCase().includes(q) ||
+      t.university.toLowerCase().includes(q);
 
     const matchesSubject =
       subjectFilter === "all" || t.subject.toLowerCase().includes(subjectFilter.toLowerCase());
@@ -369,10 +371,17 @@ export function TutorsPage() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <Link to="/profile" className="truncate font-semibold hover:underline">
-                        {t.name}
-                      </Link>
-                      <div className="flex items-center gap-0.5 text-sm font-semibold text-amber-600">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <Link to="/profile" className="truncate font-semibold hover:underline">
+                          {t.name}
+                        </Link>
+                        {t.handle && (
+                          <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium shrink-0">
+                            @{t.handle}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-0.5 text-sm font-semibold text-amber-600 shrink-0">
                         <Star className="h-3.5 w-3.5 fill-amber-500 text-amber-500" />
                         {t.rating}
                       </div>

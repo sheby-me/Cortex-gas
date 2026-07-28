@@ -472,15 +472,10 @@ function RoleForm({ role }: { role: Role }) {
     }
   }
 
-  async function handleQuickDemo(targetRole: "student" | "tutor" | "admin") {
+  async function handleQuickDemo(targetRole: "student" | "tutor") {
     setBusy(true);
     setFormError(null);
-    const demoEmail =
-      targetRole === "admin"
-        ? "admin@cortex.edu"
-        : targetRole === "tutor"
-          ? "sarah.tutor@cortex.edu"
-          : "alex.student@cortex.edu";
+    const demoEmail = targetRole === "tutor" ? "sarah.tutor@cortex.edu" : "alex.student@cortex.edu";
     const demoPass = "Password123!";
 
     try {
@@ -496,28 +491,6 @@ function RoleForm({ role }: { role: Role }) {
           const cred = await signInAnonymously(auth);
           u = cred.user;
         }
-      }
-
-      if (targetRole === "admin") {
-        try {
-          await setDoc(doc(db, "admin_emails", demoEmail), { email: demoEmail }, { merge: true });
-          await setDoc(
-            doc(db, "users", u.uid),
-            {
-              uid: u.uid,
-              email: demoEmail,
-              displayName: "Cortex Admin",
-              role: "admin",
-              updatedAt: serverTimestamp(),
-            },
-            { merge: true },
-          );
-        } catch (e) {
-          console.warn("Could not write admin doc:", e);
-        }
-        toast.success("Signed in as Admin.");
-        navigate({ to: "/admin" });
-        return;
       }
 
       if (targetRole === "tutor") {
@@ -584,7 +557,7 @@ function RoleForm({ role }: { role: Role }) {
           </span>
           <span className="text-[10px] font-normal text-muted-foreground">Instant Access</span>
         </div>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 gap-2">
           <Button
             type="button"
             variant="outline"
@@ -593,7 +566,7 @@ function RoleForm({ role }: { role: Role }) {
             onClick={() => handleQuickDemo("student")}
             className="h-8 text-[11px] font-medium px-2 rounded-md hover:bg-primary hover:text-primary-foreground transition-colors"
           >
-            <GraduationCap className="mr-1 h-3 w-3 shrink-0" />
+            <GraduationCap className="mr-1 h-3.5 w-3.5 shrink-0" />
             Student
           </Button>
           <Button
@@ -604,19 +577,8 @@ function RoleForm({ role }: { role: Role }) {
             onClick={() => handleQuickDemo("tutor")}
             className="h-8 text-[11px] font-medium px-2 rounded-md hover:bg-primary hover:text-primary-foreground transition-colors"
           >
-            <BookOpen className="mr-1 h-3 w-3 shrink-0" />
+            <BookOpen className="mr-1 h-3.5 w-3.5 shrink-0" />
             Tutor
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => handleQuickDemo("admin")}
-            className="h-8 text-[11px] font-medium px-2 rounded-md border-amber-500/30 text-amber-700 dark:text-amber-400 hover:bg-amber-500 hover:text-white transition-colors"
-          >
-            <Shield className="mr-1 h-3 w-3 shrink-0" />
-            Admin
           </Button>
         </div>
       </div>

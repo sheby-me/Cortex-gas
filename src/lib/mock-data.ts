@@ -22,6 +22,7 @@ export const tutors = [
   {
     id: "t1",
     name: "Dr. Sana Rehman",
+    handle: "dr_sana",
     subject: "Machine Learning",
     university: "Stanford",
     rating: 4.9,
@@ -36,6 +37,7 @@ export const tutors = [
   {
     id: "t2",
     name: "Ken Watanabe",
+    handle: "ken_watanabe",
     subject: "Operating Systems",
     university: "U. Tokyo",
     rating: 4.8,
@@ -50,6 +52,7 @@ export const tutors = [
   {
     id: "t3",
     name: "Maria Alvarez",
+    handle: "maria_alvarez",
     subject: "Data Structures",
     university: "MIT",
     rating: 5.0,
@@ -64,6 +67,7 @@ export const tutors = [
   {
     id: "t4",
     name: "Ibrahim Diallo",
+    handle: "ibrahim_diallo",
     subject: "Linear Algebra",
     university: "ETH Zürich",
     rating: 4.7,
@@ -78,6 +82,7 @@ export const tutors = [
   {
     id: "t5",
     name: "Priya Nair",
+    handle: "priya_nair",
     subject: "Databases",
     university: "IIT Madras",
     rating: 4.9,
@@ -92,6 +97,7 @@ export const tutors = [
   {
     id: "t6",
     name: "Lucas Meier",
+    handle: "lucas_meier",
     subject: "Algorithms",
     university: "TU Munich",
     rating: 4.8,

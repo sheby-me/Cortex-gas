@@ -38,6 +38,13 @@ import {
 } from "lucide-react";
 import { messages as initialMessages } from "@/lib/mock-data";
 import { toast } from "sonner";
+import { useAuth } from "@/hooks/use-auth";
+import {
+  searchNetworkUsers,
+  cleanHandle,
+  getUserByUsername,
+  type NetworkUser,
+} from "@/lib/user-network";
 
 export const Route = createFileRoute("/_app/messages")({
   head: () => ({
@@ -67,6 +74,7 @@ interface ChatMessage {
 interface Conversation {
   id: string;
   name: string;
+  username?: string;
   avatar: string;
   online: boolean;
   last: string;
@@ -115,35 +123,44 @@ const SUGGESTED_CONTACTS = [
 ];
 
 export function MsgPage() {
+  const { profile } = useAuth();
+
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    const defaultChats: Conversation[] = initialMessages.map((m) => ({
-      ...m,
-      status: "accepted",
-      chatHistory: [
-        { me: false, text: "Hey! Ready for our study session?", time: "10:30 AM" },
-        { me: true, text: "Yes! Just finishing my coffee and notes ☕", time: "10:32 AM" },
-        {
-          me: false,
-          text: `Sending over the ${m.name} review materials now!`,
-          time: "10:35 AM",
-          attachments: [
-            {
-              id: `att_init_${m.id}`,
-              name: `${m.name.replace(/\s+/g, "_")}_StudyGuide.pdf`,
-              url: "#",
-              type: "file",
-              size: "1.4 MB",
-            },
-          ],
-        },
-        { me: true, text: "Awesome, I've got the whiteboard open.", time: "10:36 AM" },
-      ],
-    }));
+    const defaultChats: Conversation[] = initialMessages.map((m) => {
+      let handleName = cleanHandle(m.name);
+      if (m.name.includes("Aditi")) handleName = "aditi_sharma";
+      if (m.name.includes("Sana")) handleName = "dr_sana";
+      return {
+        ...m,
+        username: handleName,
+        status: "accepted",
+        chatHistory: [
+          { me: false, text: "Hey! Ready for our study session?", time: "10:30 AM" },
+          { me: true, text: "Yes! Just finishing my coffee and notes ☕", time: "10:32 AM" },
+          {
+            me: false,
+            text: `Sending over the ${m.name} review materials now!`,
+            time: "10:35 AM",
+            attachments: [
+              {
+                id: `att_init_${m.id}`,
+                name: `${m.name.replace(/\s+/g, "_")}_StudyGuide.pdf`,
+                url: "#",
+                type: "file",
+                size: "1.4 MB",
+              },
+            ],
+          },
+          { me: true, text: "Awesome, I've got the whiteboard open.", time: "10:36 AM" },
+        ],
+      };
+    });
 
     // Add a pending message request from Dr. Aris Thorne
     const pendingRequest: Conversation = {
       id: "req_dr_thorn",
       name: "Dr. Aris Thorne",
+      username: "dr_aris",
       avatar:
         "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
       online: true,
@@ -184,23 +201,43 @@ export function MsgPage() {
   // New Chat Modal state
   const [isNewChatOpen, setIsNewChatOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState("");
-  const [selectedContact, setSelectedContact] = useState<
-    (typeof SUGGESTED_CONTACTS)[number] | null
-  >(null);
+  const [selectedContact, setSelectedContact] = useState<NetworkUser | null>(null);
   const [customContactName, setCustomContactName] = useState("");
   const [initialMessage, setInitialMessage] = useState("");
 
   const activeChat = conversations.find((c) => c.id === activeChatId) || conversations[0];
 
+  // Search network for contacts by name or @username
+  const searchedUsers = searchNetworkUsers(contactSearch, profile?.uid);
+
   const handleStartNewChat = () => {
-    const name = selectedContact ? selectedContact.name : customContactName.trim();
+    let name = selectedContact ? selectedContact.displayName : customContactName.trim();
+    let targetUsername = selectedContact
+      ? selectedContact.username
+      : cleanHandle(customContactName);
+
+    if (!name && targetUsername) {
+      const found = getUserByUsername(targetUsername);
+      if (found) {
+        name = found.displayName;
+        targetUsername = found.username;
+      } else {
+        name = `@${targetUsername}`;
+      }
+    }
+
     if (!name) {
-      toast.error("Please select or enter a contact name.");
+      toast.error("Please select a student or enter a valid name / @username.");
       return;
     }
 
     // Check if chat already exists
-    const existing = conversations.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const existing = conversations.find(
+      (c) =>
+        c.name.toLowerCase() === name.toLowerCase() ||
+        (c.username && c.username === targetUsername),
+    );
+
     if (existing) {
       setActiveChatId(existing.id);
       if (initialMessage.trim()) {
@@ -223,31 +260,32 @@ export function MsgPage() {
       toast.success(`Switched to existing chat with ${existing.name}`);
     } else {
       const avatar = selectedContact
-        ? selectedContact.avatar
-        : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(name)}`;
+        ? selectedContact.avatarUrl
+        : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(targetUsername || name)}`;
       const newId = `chat_${Date.now()}`;
       const newChat: Conversation = {
         id: newId,
         name,
+        username: targetUsername,
         avatar,
         online: true,
         last: initialMessage.trim() || "Message request sent",
         time: "Just now",
         unread: 0,
-        status: "accepted", // Sent by current user, auto-accepted for self
+        status: "accepted", // Sent by current user
         chatHistory: initialMessage.trim()
           ? [{ me: true, text: initialMessage.trim(), time: "Just now" }]
           : [
               {
                 me: false,
-                text: `Hi! Thanks for reaching out on Cortex. Excited to connect and study together!`,
+                text: `Hi! Thanks for reaching out on Cortex (@${targetUsername}). Excited to connect!`,
                 time: "Just now",
               },
             ],
       };
       setConversations((prev) => [newChat, ...prev]);
       setActiveChatId(newId);
-      toast.success(`New chat started with ${name}`);
+      toast.success(`New chat started with ${name} (@${targetUsername})`);
     }
 
     // Reset & Close
@@ -438,72 +476,90 @@ export function MsgPage() {
                   {/* Search / Filter Contacts */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground mb-1.5 block">
-                      Select Contact
+                      Search Network by Name, @username, or Specialization
                     </label>
                     <div className="relative mb-2">
                       <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={contactSearch}
                         onChange={(e) => setContactSearch(e.target.value)}
-                        placeholder="Filter suggested contacts…"
+                        placeholder="Search @handle, name, institution, or topic..."
                         className="pl-8 h-9 text-xs rounded-xl"
                       />
                     </div>
 
-                    <div className="max-h-48 overflow-y-auto space-y-1 border border-border rounded-xl p-1.5 bg-muted/20">
-                      {SUGGESTED_CONTACTS.filter(
-                        (c) =>
-                          c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
-                          c.role.toLowerCase().includes(contactSearch.toLowerCase()),
-                      ).map((c) => {
-                        const isSelected = selectedContact?.name === c.name;
-                        return (
-                          <button
-                            key={c.name}
-                            type="button"
-                            onClick={() => {
-                              setSelectedContact(isSelected ? null : c);
-                              setCustomContactName("");
-                            }}
-                            className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition text-xs ${
-                              isSelected
-                                ? "bg-primary/10 border border-primary/30 text-primary font-medium"
-                                : "hover:bg-muted/80 text-foreground"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <Avatar className="h-8 w-8 shrink-0">
-                                <AvatarImage src={c.avatar} />
-                                <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
-                                  {c.name.slice(0, 2)}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <div className="font-semibold">{c.name}</div>
-                                <div className="text-[10px] text-muted-foreground">{c.role}</div>
+                    <div className="max-h-52 overflow-y-auto space-y-1 border border-border rounded-xl p-1.5 bg-muted/20">
+                      {searchedUsers.length === 0 ? (
+                        <div className="text-center py-6 px-3 text-xs text-muted-foreground">
+                          No users matching &quot;{contactSearch}&quot;. Type a custom @username
+                          below to send a message request.
+                        </div>
+                      ) : (
+                        searchedUsers.map((u) => {
+                          const isSelected = selectedContact?.uid === u.uid;
+                          return (
+                            <button
+                              key={u.uid}
+                              type="button"
+                              onClick={() => {
+                                setSelectedContact(isSelected ? null : u);
+                                setCustomContactName("");
+                              }}
+                              className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition text-xs ${
+                                isSelected
+                                  ? "bg-primary/10 border border-primary/30 text-primary font-medium"
+                                  : "hover:bg-muted/80 text-foreground"
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <Avatar className="h-8 w-8 shrink-0">
+                                  <AvatarImage src={u.avatarUrl} />
+                                  <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                                    {u.displayName.slice(0, 2).toUpperCase()}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-semibold flex items-center gap-1.5">
+                                    <span className="truncate">{u.displayName}</span>
+                                    <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded shrink-0">
+                                      @{u.username}
+                                    </span>
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground truncate">
+                                    {u.role === "tutor" ? "🎓 Tutor" : "📚 Student"} ·{" "}
+                                    {u.institution} ({u.majorOrSubject})
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                            {isSelected && <UserCheck className="h-4 w-4 text-primary shrink-0" />}
-                          </button>
-                        );
-                      })}
+                              {isSelected && (
+                                <UserCheck className="h-4 w-4 text-primary shrink-0 ml-1" />
+                              )}
+                            </button>
+                          );
+                        })
+                      )}
                     </div>
                   </div>
 
-                  {/* Custom Name fallback if not selecting from list */}
+                  {/* Custom Handle fallback if not selecting from list */}
                   <div>
                     <label className="text-xs font-semibold text-muted-foreground mb-1 block">
-                      Or type custom name / username
+                      Or type custom @username or display name
                     </label>
-                    <Input
-                      value={customContactName}
-                      onChange={(e) => {
-                        setCustomContactName(e.target.value);
-                        if (e.target.value) setSelectedContact(null);
-                      }}
-                      placeholder="e.g. Prof. Miller or Classmate Alex"
-                      className="h-9 text-xs rounded-xl"
-                    />
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-mono text-xs select-none">
+                        @
+                      </span>
+                      <Input
+                        value={customContactName}
+                        onChange={(e) => {
+                          setCustomContactName(e.target.value);
+                          if (e.target.value) setSelectedContact(null);
+                        }}
+                        placeholder="e.g. ken_watanabe or Prof. Miller"
+                        className="pl-7 h-9 text-xs rounded-xl font-mono"
+                      />
+                    </div>
                   </div>
 
                   {/* Optional initial message */}
@@ -622,6 +678,11 @@ export function MsgPage() {
                     <div className="flex items-center justify-between">
                       <div className="truncate text-sm font-semibold flex items-center gap-1.5">
                         <span className="truncate">{m.name}</span>
+                        {m.username && (
+                          <span className="font-mono text-[10px] text-muted-foreground shrink-0">
+                            @{m.username}
+                          </span>
+                        )}
                         {m.status === "pending_request" && (
                           <Badge
                             variant="outline"
@@ -662,6 +723,14 @@ export function MsgPage() {
             <div>
               <div className="text-sm font-semibold flex items-center gap-2">
                 <span>{activeChat.name}</span>
+                {activeChat.username && (
+                  <Badge
+                    variant="outline"
+                    className="font-mono text-[11px] px-2 py-0.2 border-primary/30 text-primary bg-primary/5"
+                  >
+                    @{activeChat.username}
+                  </Badge>
+                )}
                 {activeChat.status === "pending_request" && (
                   <Badge
                     variant="outline"

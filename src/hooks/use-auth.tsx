@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { onAuthStateChanged, type User } from "firebase/auth";
 import { doc, onSnapshot, setDoc } from "firebase/firestore";
 import { auth, db } from "@/integrations/firebase/client";
+import { registerOrUpdateNetworkUser, cleanHandle } from "@/lib/user-network";
 
 export type AppRole = "student" | "tutor" | "admin";
 
@@ -20,6 +21,7 @@ export interface EducationEntry {
 
 export type UserProfile = {
   uid: string;
+  username?: string | null;
   email: string | null;
   displayName: string | null;
   avatarUrl?: string | null;
@@ -47,6 +49,7 @@ export type UserProfile = {
 
 const DEFAULT_PROFILE: UserProfile = {
   uid: "demo_user_1",
+  username: "alex_morgan",
   email: "alex.student@cortex.edu",
   displayName: "Alex Morgan",
   avatarUrl:
@@ -245,14 +248,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   const updateProfile = async (updates: Partial<UserProfile>) => {
+    const formattedUsername =
+      updates.username !== undefined
+        ? updates.username
+          ? cleanHandle(updates.username)
+          : null
+        : profile.username;
+
     const newProfile: UserProfile = {
       ...profile,
       ...updates,
+      username: formattedUsername,
     };
     setProfile(newProfile);
     if (newProfile.role) {
       setRole(newProfile.role);
     }
+
+    // Sync with network directory
+    registerOrUpdateNetworkUser({
+      uid: newProfile.uid || "demo_user_1",
+      username: formattedUsername || "alex_morgan",
+      displayName: newProfile.displayName || "Alex Morgan",
+      role: newProfile.role,
+      avatarUrl:
+        newProfile.avatarUrl ||
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+      institution: newProfile.institution || undefined,
+      gradeLevel: newProfile.gradeLevel || undefined,
+      degreeOrStream: newProfile.degreeOrStream || undefined,
+      about: newProfile.about || undefined,
+      teach: newProfile.teach,
+      learn: newProfile.learn,
+    });
 
     try {
       localStorage.setItem("cortex_user_profile", JSON.stringify(newProfile));

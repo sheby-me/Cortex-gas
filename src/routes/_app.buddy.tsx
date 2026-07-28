@@ -34,10 +34,14 @@ import {
   Building2,
   GraduationCap,
   BookOpen,
+  UserPlus,
+  AtSign,
 } from "lucide-react";
 import { buddies as initialBuddies } from "@/lib/mock-data";
 import { useAuth, type GradeLevel } from "@/hooks/use-auth";
 import { toast } from "sonner";
+import { sendBuddyRequest } from "@/lib/notifications-store";
+import { SendBuddyModal } from "@/components/send-buddy-modal";
 
 export const Route = createFileRoute("/_app/buddy")({
   head: () => ({
@@ -56,6 +60,7 @@ export const Route = createFileRoute("/_app/buddy")({
 interface BuddyItem {
   id: string;
   name: string;
+  username?: string;
   avatar: string;
   uni: string;
   semesterOrYear?: string;
@@ -79,6 +84,7 @@ export function BuddyPage() {
       {
         id: "b_1",
         name: "Elena Rostova",
+        username: "elena_rostova",
         avatar:
           "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
         uni: profile.institution || "Stanford University",
@@ -95,6 +101,7 @@ export function BuddyPage() {
       {
         id: "b_2",
         name: "Rahul Verma",
+        username: "rahul_verma",
         avatar:
           "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
         uni: profile.institution || "Stanford University",
@@ -108,14 +115,19 @@ export function BuddyPage() {
         isBatchmate: true,
         requested: false,
       },
-      ...initialBuddies.map((b, idx) => ({
-        ...b,
-        semesterOrYear: idx % 2 === 0 ? "Semester 4" : "Class 10 / Matric",
-        degreeOrStream: idx % 2 === 0 ? "BS Data Science" : "Science Stream",
-        gradeLevel: idx % 2 === 0 ? "Undergraduate" : "Matric",
-        isBatchmate: b.uni.toLowerCase().includes(userUni) || userUni.includes(b.uni.toLowerCase()),
-        requested: false,
-      })),
+      ...initialBuddies.map((b, idx) => {
+        const uHandles = ["marcus_a", "priya_sharma", "sophia_chen", "david_kim", "aisha_khan"];
+        return {
+          ...b,
+          username: uHandles[idx % uHandles.length],
+          semesterOrYear: idx % 2 === 0 ? "Semester 4" : "Class 10 / Matric",
+          degreeOrStream: idx % 2 === 0 ? "BS Data Science" : "Science Stream",
+          gradeLevel: idx % 2 === 0 ? "Undergraduate" : "Matric",
+          isBatchmate:
+            b.uni.toLowerCase().includes(userUni) || userUni.includes(b.uni.toLowerCase()),
+          requested: false,
+        };
+      }),
     ];
   });
 
@@ -127,6 +139,8 @@ export function BuddyPage() {
 
   // Modal States
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [selectedTargetUser, setSelectedTargetUser] = useState<BuddyItem | null>(null);
   const [newTopic, setNewTopic] = useState("");
   const [newUni, setNewUni] = useState(profile.institution || "Stanford University");
   const [newSemester, setNewSemester] = useState(profile.semesterOrYear || "Semester 4");
@@ -177,20 +191,25 @@ export function BuddyPage() {
     setNewNotes("");
   };
 
-  const handleToggleTeamUp = (buddyId: string, buddyName: string) => {
+  const handleToggleTeamUp = (buddy: BuddyItem) => {
+    const nextState = !buddy.requested;
+    if (nextState) {
+      const res = sendBuddyRequest({
+        targetUidOrHandle: buddy.username || buddy.id,
+        customNote: `Sent buddy request for studying ${buddy.topic}`,
+        senderProfile: profile,
+      });
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.info(res.message);
+      }
+    } else {
+      toast.info(`Request to ${buddy.name} cancelled.`);
+    }
+
     setBuddyList((prev) =>
-      prev.map((b) => {
-        if (b.id === buddyId) {
-          const nextState = !b.requested;
-          if (nextState) {
-            toast.success(`Team-up request sent to ${buddyName}!`);
-          } else {
-            toast.info(`Request to ${buddyName} cancelled.`);
-          }
-          return { ...b, requested: nextState };
-        }
-        return b;
-      }),
+      prev.map((b) => (b.id === buddy.id ? { ...b, requested: nextState } : b)),
     );
   };
 
@@ -205,11 +224,13 @@ export function BuddyPage() {
   };
 
   const filteredBuddies = buddyList.filter((b) => {
+    const q = searchTopic.toLowerCase().trim();
     const matchesTopic =
-      !searchTopic.trim() ||
-      b.topic.toLowerCase().includes(searchTopic.toLowerCase()) ||
-      b.name.toLowerCase().includes(searchTopic.toLowerCase()) ||
-      b.uni.toLowerCase().includes(searchTopic.toLowerCase());
+      !q ||
+      b.topic.toLowerCase().includes(q) ||
+      b.name.toLowerCase().includes(q) ||
+      (b.username && b.username.toLowerCase().includes(q.replace(/^@/, ""))) ||
+      b.uni.toLowerCase().includes(q);
 
     const matchesLevel =
       levelFilter === "all" ||
@@ -238,13 +259,26 @@ export function BuddyPage() {
             Match with peers by topic, exam date, timezone and pace.
           </p>
         </div>
-        <Button
-          onClick={() => setIsRequestModalOpen(true)}
-          className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          New Buddy Request
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            onClick={() => {
+              setSelectedTargetUser(null);
+              setIsSendModalOpen(true);
+            }}
+            variant="outline"
+            className="rounded-xl border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
+          >
+            <UserPlus className="h-4 w-4" />
+            Send Request by ID / @username
+          </Button>
+          <Button
+            onClick={() => setIsRequestModalOpen(true)}
+            className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            Post Open Request
+          </Button>
+        </div>
       </div>
 
       <Card className="mb-6 rounded-2xl border-border bg-gradient-mesh p-6 shadow-soft">
@@ -335,7 +369,14 @@ export function BuddyPage() {
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="truncate font-semibold">{b.name}</div>
+                      <div className="truncate font-semibold flex items-center gap-1.5">
+                        <span className="truncate">{b.name}</span>
+                        {b.username && (
+                          <span className="font-mono text-[11px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium shrink-0">
+                            @{b.username}
+                          </span>
+                        )}
+                      </div>
                       <Badge className="rounded-full bg-gradient-primary text-primary-foreground border-0 shrink-0 text-[10px]">
                         {b.match}% match
                       </Badge>
@@ -396,7 +437,7 @@ export function BuddyPage() {
                   <MessageSquare className="mr-1.5 h-4 w-4" /> Message
                 </Button>
                 <Button
-                  onClick={() => handleToggleTeamUp(b.id, b.name)}
+                  onClick={() => handleToggleTeamUp(b)}
                   variant={b.requested ? "secondary" : "default"}
                   className={`rounded-xl transition ${
                     b.requested
@@ -564,6 +605,15 @@ export function BuddyPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Send Buddy Request Modal */}
+      <SendBuddyModal
+        isOpen={isSendModalOpen}
+        onClose={() => {
+          setIsSendModalOpen(false);
+          setSelectedTargetUser(null);
+        }}
+      />
     </div>
   );
 }

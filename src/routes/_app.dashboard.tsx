@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,12 @@ import {
   Calendar,
   MessagesSquare,
 } from "lucide-react";
-import { currentUser, tutors, buddies, upcomingExams, notifications } from "@/lib/mock-data";
+import { currentUser, tutors, buddies, upcomingExams } from "@/lib/mock-data";
+import {
+  getNotifications,
+  NOTIFICATION_EVENT,
+  type CortexNotification,
+} from "@/lib/notifications-store";
 
 export const Route = createFileRoute("/_app/dashboard")({
   head: () => ({
@@ -63,6 +69,20 @@ function Stat({
 
 function Dashboard() {
   const goalPct = Math.round((currentUser.todayMin / currentUser.dailyGoalMin) * 100);
+  const [notifList, setNotifList] = useState<CortexNotification[]>([]);
+
+  useEffect(() => {
+    const update = () => {
+      setNotifList(getNotifications());
+    };
+    update();
+
+    if (typeof window !== "undefined") {
+      window.addEventListener(NOTIFICATION_EVENT, update);
+      return () => window.removeEventListener(NOTIFICATION_EVENT, update);
+    }
+  }, []);
+
   return (
     <div className="p-6 md:p-8">
       {/* Greeting */}
@@ -281,14 +301,26 @@ function Dashboard() {
 
           {/* Activity */}
           <Card className="rounded-2xl border-border p-6 shadow-soft">
-            <h2 className="mb-4 text-lg font-semibold tracking-tight">Recent activity</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold tracking-tight">Recent activity</h2>
+              <Button
+                asChild
+                variant="ghost"
+                size="sm"
+                className="text-xs h-7 text-primary hover:bg-primary/10"
+              >
+                <Link to="/notifications">View all</Link>
+              </Button>
+            </div>
             <div className="space-y-3">
-              {notifications.slice(0, 4).map((n) => (
+              {notifList.slice(0, 4).map((n) => (
                 <div key={n.id} className="flex items-start gap-3 text-sm">
-                  <div className="mt-1 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  <div
+                    className={`mt-1 h-2 w-2 shrink-0 rounded-full ${!n.read ? "bg-primary" : "bg-muted-foreground/40"}`}
+                  />
                   <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2">{n.text}</div>
-                    <div className="text-xs text-muted-foreground">{n.time}</div>
+                    <div className="line-clamp-2 text-xs font-medium">{n.text}</div>
+                    <div className="text-[10px] text-muted-foreground">{n.time}</div>
                   </div>
                 </div>
               ))}

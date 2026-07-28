@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   Select,
   SelectContent,
@@ -32,10 +33,16 @@ import {
   Lock,
   Save,
   CheckCircle2,
+  AtSign,
+  AlertCircle,
+  Check,
+  Upload,
+  Camera,
 } from "lucide-react";
 import { useAuth, type GradeLevel } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
 import { toast } from "sonner";
+import { cleanHandle, isValidHandle, isUsernameTaken } from "@/lib/user-network";
 
 export const Route = createFileRoute("/_app/settings")({
   head: () => ({
@@ -56,7 +63,10 @@ export function SettingsPage() {
 
   // Form State
   const [name, setName] = useState(profile.displayName || "");
+  const [username, setUsername] = useState(profile.username || "alex_morgan");
   const [email, setEmail] = useState(profile.email || "");
+  const [avatarUrl, setAvatarUrl] = useState(profile.avatarUrl || "");
+  const [coverImageUrl, setCoverImageUrl] = useState(profile.coverImageUrl || "");
   const [grade, setGrade] = useState<GradeLevel>(
     (profile.gradeLevel as GradeLevel) || "Undergraduate",
   );
@@ -66,6 +76,51 @@ export function SettingsPage() {
   const [country, setCountry] = useState(profile.country || "United States");
   const [timezone, setTimezone] = useState(profile.timezone || "UTC-5 (EST)");
   const [bio, setBio] = useState(profile.about || "");
+
+  // Local Storage File Upload Refs
+  const settingsAvatarInputRef = useRef<HTMLInputElement>(null);
+  const settingsCoverInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSettingsAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("File size must be under 8MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setAvatarUrl(dataUrl);
+        toast.success("Profile picture loaded from local device!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSettingsCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("File size must be under 10MB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result as string;
+      if (dataUrl) {
+        setCoverImageUrl(dataUrl);
+        toast.success("Cover banner image loaded from local device!");
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Username live validation
+  const cleanedHandle = cleanHandle(username);
+  const handleVal = isValidHandle(cleanedHandle);
+  const handleTaken = isUsernameTaken(cleanedHandle, profile.uid);
 
   // Preference Switches State
   const [darkMode, setDarkMode] = useState(isDark);
@@ -83,7 +138,10 @@ export function SettingsPage() {
 
   useEffect(() => {
     setName(profile.displayName || "");
+    setUsername(profile.username || "alex_morgan");
     setEmail(profile.email || "");
+    setAvatarUrl(profile.avatarUrl || "");
+    setCoverImageUrl(profile.coverImageUrl || "");
     setGrade((profile.gradeLevel as GradeLevel) || "Undergraduate");
     setInstitution(profile.institution || "");
     setSemester(profile.semesterOrYear || "");
@@ -98,9 +156,21 @@ export function SettingsPage() {
   }, [profile]);
 
   const handleSaveChanges = async () => {
+    if (!handleVal.valid) {
+      toast.error(handleVal.reason || "Invalid username format.");
+      return;
+    }
+    if (handleTaken) {
+      toast.error(`The username @${cleanedHandle} is already taken by another user.`);
+      return;
+    }
+
     await updateProfile({
       displayName: name,
+      username: cleanedHandle,
       email,
+      avatarUrl,
+      coverImageUrl,
       gradeLevel: grade,
       institution,
       semesterOrYear: semester,
@@ -167,6 +237,76 @@ export function SettingsPage() {
           Student Account & Credentials
         </div>
 
+        {/* Profile Picture & Cover Photo Local Storage Upload Section */}
+        <div className="grid gap-4 md:grid-cols-2 bg-secondary/30 p-4 rounded-2xl border border-border">
+          {/* Profile Picture Upload */}
+          <div>
+            <Label className="text-xs font-semibold mb-2 block">Profile Picture (Avatar)</Label>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-14 w-14 border-2 border-primary shrink-0 shadow-sm">
+                <AvatarImage src={avatarUrl} />
+                <AvatarFallback className="bg-primary/10 text-primary font-bold">ST</AvatarFallback>
+              </Avatar>
+              <div className="flex-1 space-y-1.5">
+                <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 rounded-xl shadow-soft transition">
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload Local Photo
+                  <input
+                    ref={settingsAvatarInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleSettingsAvatarUpload}
+                  />
+                </label>
+                <Input
+                  value={avatarUrl}
+                  onChange={(e) => setAvatarUrl(e.target.value)}
+                  placeholder="Or paste photo URL..."
+                  className="rounded-xl text-xs h-7"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Cover Photo Upload */}
+          <div>
+            <Label className="text-xs font-semibold mb-2 block">Cover Banner Photo</Label>
+            <div className="space-y-1.5">
+              <div className="relative h-14 w-full rounded-xl overflow-hidden border border-border bg-muted">
+                {coverImageUrl ? (
+                  <img
+                    src={coverImageUrl}
+                    alt="Cover preview"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground">
+                    No cover banner set
+                  </div>
+                )}
+                <label className="absolute bottom-1 right-1 cursor-pointer inline-flex items-center gap-1 bg-background/90 text-foreground text-[11px] font-medium px-2 py-0.5 rounded-lg border border-border shadow-soft hover:bg-background transition backdrop-blur-md">
+                  <Camera className="h-3 w-3 text-primary" />
+                  <span>Upload Local Cover</span>
+                  <input
+                    ref={settingsCoverInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleSettingsCoverUpload}
+                  />
+                </label>
+              </div>
+              <Input
+                value={coverImageUrl}
+                onChange={(e) => setCoverImageUrl(e.target.value)}
+                placeholder="Or paste cover URL..."
+                className="rounded-xl text-xs h-7"
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="grid gap-4 md:grid-cols-2">
           <div>
             <Label className="text-xs font-semibold">Full Name *</Label>
@@ -175,6 +315,47 @@ export function SettingsPage() {
               onChange={(e) => setName(e.target.value)}
               className="mt-1.5 rounded-xl"
             />
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold flex items-center justify-between">
+              <span>Unique ID / Username (@handle) *</span>
+              {handleVal.valid && !handleTaken && (
+                <span className="text-[11px] font-normal text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                  <Check className="h-3 w-3" /> Available
+                </span>
+              )}
+            </Label>
+            <div className="relative mt-1.5">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground font-medium text-sm select-none">
+                @
+              </span>
+              <Input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="unique_handle"
+                className={`pl-8 rounded-xl font-mono text-sm ${
+                  handleTaken || !handleVal.valid
+                    ? "border-destructive focus-visible:ring-destructive"
+                    : "focus-visible:ring-emerald-500"
+                }`}
+              />
+            </div>
+            {handleTaken ? (
+              <p className="text-[11px] text-destructive mt-1 flex items-center gap-1 font-medium">
+                <AlertCircle className="h-3 w-3" /> @{cleanedHandle} is already taken by another
+                user.
+              </p>
+            ) : !handleVal.valid && username.length > 0 ? (
+              <p className="text-[11px] text-destructive mt-1 flex items-center gap-1 font-medium">
+                <AlertCircle className="h-3 w-3" /> {handleVal.reason}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Other students & tutors can search, message, and invite you using @
+                {cleanedHandle || "username"}.
+              </p>
+            )}
           </div>
 
           <div>
