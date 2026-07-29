@@ -6,6 +6,12 @@ import {
   registerOrUpdateNetworkUser,
   type NetworkUser,
 } from "./user-network";
+import {
+  sendFriendRequest,
+  acceptFriendRequest,
+  declineFriendRequest,
+  type FriendRequestData,
+} from "./friends-service";
 
 export interface CortexNotification {
   id: string;
@@ -430,6 +436,13 @@ export function sendBuddyRequest(params: {
 
   saveNotifications([newNotif, ...existingNotifs]);
 
+  // Sync with friends service (Firestore & cortex_friend_requests_v2)
+  try {
+    sendFriendRequest(senderInfo, targetUser);
+  } catch (e) {
+    console.warn("Error syncing sendBuddyRequest to friends-service:", e);
+  }
+
   return {
     success: true,
     message: `Buddy request successfully sent to ${targetUser.displayName} (@${targetUser.username})!`,
@@ -458,6 +471,8 @@ export function respondToBuddyRequest(
   if (!fromUser) {
     return { success: false, message: "Invalid request payload." };
   }
+
+  const rawReqId = notificationId.replace(/^notif_/, "");
 
   if (accept) {
     // Add both to connected buddies
@@ -490,6 +505,35 @@ export function respondToBuddyRequest(
 
     saveNotifications([confirmationNotif, ...notifs]);
 
+    // Sync with friends-service
+    const requestData: FriendRequestData = {
+      id: rawReqId,
+      fromUid: fromUser.uid,
+      toUid: targetNotif.toUser?.uid || "demo_user_1",
+      fromUser: {
+        uid: fromUser.uid,
+        displayName: fromUser.displayName,
+        username: fromUser.username,
+        avatarUrl: fromUser.avatarUrl,
+        institution: fromUser.institution,
+        gradeLevel: (fromUser as unknown as { gradeLevel?: string }).gradeLevel || null,
+      },
+      toUser: {
+        uid: targetNotif.toUser?.uid || "demo_user_1",
+        displayName: targetNotif.toUser?.displayName || "Alex Morgan",
+        username: targetNotif.toUser?.username || "alex_morgan",
+        avatarUrl: targetNotif.toUser?.avatarUrl || null,
+        institution: targetNotif.toUser?.institution || null,
+        gradeLevel: (targetNotif.toUser as unknown as { gradeLevel?: string })?.gradeLevel || null,
+      },
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+
+    acceptFriendRequest(requestData).catch((err) =>
+      console.warn("Error syncing accept to friends-service:", err),
+    );
+
     return {
       success: true,
       message: `Accepted! You and ${fromUser.displayName} (@${fromUser.username}) are now study buddies.`,
@@ -512,6 +556,10 @@ export function respondToBuddyRequest(
     };
 
     saveNotifications(notifs);
+
+    declineFriendRequest(rawReqId).catch((err) =>
+      console.warn("Error syncing decline to friends-service:", err),
+    );
 
     return {
       success: true,

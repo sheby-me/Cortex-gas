@@ -55,19 +55,94 @@ const LOCAL_REQUESTS_KEY = "cortex_friend_requests_v2";
 const LOCAL_FRIENDS_KEY = "cortex_friends_list_v2";
 export const FRIENDS_EVENT = "cortex_friends_changed";
 
+const INITIAL_SEED_REQUESTS: FriendRequestData[] = [
+  {
+    id: "req_b1_demo_user_1",
+    fromUid: "b1",
+    toUid: "demo_user_1",
+    fromUser: {
+      uid: "b1",
+      displayName: "Aditi Sharma",
+      username: "aditi_sharma",
+      avatarUrl: "https://i.pravatar.cc/150?img=25",
+      institution: "IIT Delhi",
+      gradeLevel: "Undergraduate",
+    },
+    toUser: {
+      uid: "demo_user_1",
+      displayName: "Alex Morgan",
+      username: "alex_morgan",
+      avatarUrl:
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+      institution: "Stanford University",
+      gradeLevel: "Undergraduate",
+    },
+    status: "pending",
+    createdAt: new Date(Date.now() - 1000 * 60 * 10).toISOString(),
+  },
+  {
+    id: "req_b2_demo_user_1",
+    fromUid: "b2",
+    toUid: "demo_user_1",
+    fromUser: {
+      uid: "b2",
+      displayName: "Rahul Verma",
+      username: "rahul_verma",
+      avatarUrl:
+        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
+      institution: "Stanford University",
+      gradeLevel: "Undergraduate",
+    },
+    toUser: {
+      uid: "demo_user_1",
+      displayName: "Alex Morgan",
+      username: "alex_morgan",
+      avatarUrl:
+        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=250&auto=format&fit=crop&q=80",
+      institution: "Stanford University",
+      gradeLevel: "Undergraduate",
+    },
+    status: "pending",
+    createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
+  },
+];
+
 function notifyFriendsChanged() {
   if (typeof window !== "undefined") {
     window.dispatchEvent(new CustomEvent(FRIENDS_EVENT));
+    window.dispatchEvent(new Event("cortex_notifications_updated"));
   }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (
+      e.key === LOCAL_REQUESTS_KEY ||
+      e.key === "cortex_notifications_v1" ||
+      (e.key && e.key.startsWith(LOCAL_FRIENDS_KEY))
+    ) {
+      notifyFriendsChanged();
+    }
+  });
 }
 
 function getLocalRequests(): FriendRequestData[] {
   try {
     const raw = localStorage.getItem(LOCAL_REQUESTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
   } catch {
-    return [];
+    // fallback
   }
+
+  try {
+    localStorage.setItem(LOCAL_REQUESTS_KEY, JSON.stringify(INITIAL_SEED_REQUESTS));
+  } catch {
+    // ignore
+  }
+  return INITIAL_SEED_REQUESTS;
 }
 
 function saveLocalRequests(list: FriendRequestData[]) {
@@ -76,6 +151,48 @@ function saveLocalRequests(list: FriendRequestData[]) {
     notifyFriendsChanged();
   } catch (e) {
     console.warn("Error saving local requests:", e);
+  }
+}
+
+function syncRequestToNotification(reqData: FriendRequestData) {
+  if (typeof window === "undefined") return;
+  try {
+    const rawNotifs = localStorage.getItem("cortex_notifications_v1");
+    let notifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+    if (!Array.isArray(notifs)) notifs = [];
+
+    const notifId = `notif_${reqData.id}`;
+    const existingIndex = notifs.findIndex(
+      (n: { id: string; type?: string; fromUser?: { uid: string }; toUser?: { uid: string } }) =>
+        n.id === notifId ||
+        (n.fromUser?.uid === reqData.fromUid &&
+          n.toUser?.uid === reqData.toUid &&
+          n.type === "buddy_request"),
+    );
+
+    const newNotif = {
+      id: notifId,
+      type: "buddy_request",
+      title: "Study Buddy Request",
+      text: `@${reqData.fromUser.username} (${reqData.fromUser.displayName}) sent you a study buddy request.`,
+      time: "Just now",
+      timestamp: Date.now(),
+      read: false,
+      fromUser: reqData.fromUser,
+      toUser: reqData.toUser,
+      requestStatus: reqData.status,
+      customNote: `Hi ${reqData.toUser.displayName}! Let's connect as study buddies on Cortex.`,
+    };
+
+    if (existingIndex >= 0) {
+      notifs[existingIndex] = newNotif;
+    } else {
+      notifs.unshift(newNotif);
+    }
+
+    localStorage.setItem("cortex_notifications_v1", JSON.stringify(notifs));
+  } catch (err) {
+    console.warn("Error syncing request to notifications:", err);
   }
 }
 
@@ -273,7 +390,19 @@ export async function sendFriendRequest(
   toUser: Partial<UserProfile>,
 ): Promise<{ success: boolean; message: string }> {
   const fromUid = fromUser?.uid || "demo_user_1";
-  const toUid = toUser?.uid;
+
+  // Resolve target UID and username
+  let toUid = toUser?.uid;
+  let toUName = toUser?.username ? cleanUsername(toUser.username) : "";
+
+  if (!toUid && toUName) {
+    const found = getUserByUsername(toUName);
+    if (found) {
+      toUid = found.uid;
+    } else {
+      toUid = `uid_${toUName}`;
+    }
+  }
 
   if (!toUid) {
     return { success: false, message: "Invalid target user." };
@@ -311,7 +440,9 @@ export async function sendFriendRequest(
     fromUser.username || cleanUsername(fromName) || "learner_" + fromUid.slice(0, 4);
 
   const toName = toUser.displayName || "Learner";
-  const toUName = toUser.username || cleanUsername(toName) || "peer_" + toUid.slice(0, 4);
+  if (!toUName) {
+    toUName = cleanUsername(toName) || "peer_" + toUid.slice(0, 4);
+  }
 
   const reqData: FriendRequestData = {
     id: requestId,
@@ -343,7 +474,10 @@ export async function sendFriendRequest(
   filtered.push(reqData);
   saveLocalRequests(filtered);
 
-  // 2. Sync to Firestore in background
+  // 2. Sync to notifications store
+  syncRequestToNotification(reqData);
+
+  // 3. Sync to Firestore in background
   try {
     await setDoc(doc(db, "friend_requests", requestId), {
       ...reqData,
@@ -365,12 +499,22 @@ export async function sendFriendRequest(
 export function subscribeIncomingRequests(
   currentUid: string,
   onUpdate: (requests: FriendRequestData[]) => void,
+  currentUsername?: string,
 ): Unsubscribe {
   if (!currentUid) return () => {};
 
+  const cleanCurrentUid = currentUid.toLowerCase();
+  const cleanCurrentUname = cleanUsername(currentUsername || currentUid);
+
   const emitMerged = (fsReqs: FriendRequestData[] = []) => {
     const local = getLocalRequests().filter(
-      (r) => r.toUid === currentUid && r.status === "pending",
+      (r) =>
+        r.status === "pending" &&
+        (r.toUid === currentUid ||
+          r.toUid.toLowerCase() === cleanCurrentUid ||
+          cleanUsername(r.toUid) === cleanCurrentUname ||
+          cleanUsername(r.toUser?.username || "") === cleanCurrentUname ||
+          r.toUser?.uid === currentUid),
     );
     const map = new Map<string, FriendRequestData>();
     local.forEach((r) => map.set(r.id, r));
@@ -385,16 +529,23 @@ export function subscribeIncomingRequests(
     window.addEventListener(FRIENDS_EVENT, handleLocalEvent);
   }
 
-  const q = query(collection(db, "friend_requests"), where("toUid", "==", currentUid));
-
   const unsubFs = onSnapshot(
-    q,
+    collection(db, "friend_requests"),
     (snapshot) => {
       const list: FriendRequestData[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as FriendRequestData;
         if (data.status === "pending") {
-          list.push({ id: docSnap.id, ...data });
+          const toUidMatch =
+            data.toUid === currentUid ||
+            data.toUid?.toLowerCase() === cleanCurrentUid ||
+            cleanUsername(data.toUid || "") === cleanCurrentUname ||
+            cleanUsername(data.toUser?.username || "") === cleanCurrentUname ||
+            data.toUser?.uid === currentUid;
+
+          if (toUidMatch) {
+            list.push({ id: docSnap.id, ...data });
+          }
         }
       });
       emitMerged(list);
@@ -419,12 +570,22 @@ export function subscribeIncomingRequests(
 export function subscribeOutgoingRequests(
   currentUid: string,
   onUpdate: (requests: FriendRequestData[]) => void,
+  currentUsername?: string,
 ): Unsubscribe {
   if (!currentUid) return () => {};
 
+  const cleanCurrentUid = currentUid.toLowerCase();
+  const cleanCurrentUname = cleanUsername(currentUsername || currentUid);
+
   const emitMerged = (fsReqs: FriendRequestData[] = []) => {
     const local = getLocalRequests().filter(
-      (r) => r.fromUid === currentUid && r.status === "pending",
+      (r) =>
+        r.status === "pending" &&
+        (r.fromUid === currentUid ||
+          r.fromUid.toLowerCase() === cleanCurrentUid ||
+          cleanUsername(r.fromUid) === cleanCurrentUname ||
+          cleanUsername(r.fromUser?.username || "") === cleanCurrentUname ||
+          r.fromUser?.uid === currentUid),
     );
     const map = new Map<string, FriendRequestData>();
     local.forEach((r) => map.set(r.id, r));
@@ -439,16 +600,23 @@ export function subscribeOutgoingRequests(
     window.addEventListener(FRIENDS_EVENT, handleLocalEvent);
   }
 
-  const q = query(collection(db, "friend_requests"), where("fromUid", "==", currentUid));
-
   const unsubFs = onSnapshot(
-    q,
+    collection(db, "friend_requests"),
     (snapshot) => {
       const list: FriendRequestData[] = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data() as FriendRequestData;
         if (data.status === "pending") {
-          list.push({ id: docSnap.id, ...data });
+          const fromUidMatch =
+            data.fromUid === currentUid ||
+            data.fromUid?.toLowerCase() === cleanCurrentUid ||
+            cleanUsername(data.fromUid || "") === cleanCurrentUname ||
+            cleanUsername(data.fromUser?.username || "") === cleanCurrentUname ||
+            data.fromUser?.uid === currentUid;
+
+          if (fromUidMatch) {
+            list.push({ id: docSnap.id, ...data });
+          }
         }
       });
       emitMerged(list);
@@ -554,7 +722,65 @@ export async function acceptFriendRequest(request: FriendRequestData): Promise<v
   senderFriends.push(friendForSender);
   saveLocalFriends(fromUser.uid, senderFriends);
 
-  // 2. Firestore update
+  // 2. Sync to notifications store
+  try {
+    const rawNotifs = localStorage.getItem("cortex_notifications_v1");
+    let notifs = rawNotifs ? JSON.parse(rawNotifs) : [];
+    if (Array.isArray(notifs)) {
+      notifs = notifs.map(
+        (n: {
+          id: string;
+          type?: string;
+          fromUser?: { uid: string };
+          toUser?: { uid: string };
+        }) => {
+          if (
+            n.id === `notif_${id}` ||
+            n.id === id ||
+            (n.fromUser?.uid === fromUser.uid &&
+              n.toUser?.uid === toUser.uid &&
+              n.type === "buddy_request")
+          ) {
+            return {
+              ...n,
+              requestStatus: "accepted",
+              read: true,
+              text: `Accepted study buddy request from ${fromUser.displayName} (@${fromUser.username}).`,
+            };
+          }
+          return n;
+        },
+      );
+
+      // Add connected confirmation notification
+      notifs.unshift({
+        id: `notif_connected_${Date.now()}`,
+        type: "buddy_accepted",
+        title: "New Study Buddy Connected 🎉",
+        text: `You and ${fromUser.displayName} (@${fromUser.username}) are now Study Buddies!`,
+        time: "Just now",
+        timestamp: Date.now(),
+        read: false,
+        fromUser,
+        toUser,
+        requestStatus: "accepted",
+      });
+
+      localStorage.setItem("cortex_notifications_v1", JSON.stringify(notifs));
+    }
+
+    // Add to connected buddies
+    const rawConnected = localStorage.getItem("cortex_connected_buddies_v1");
+    let connected: string[] = rawConnected ? JSON.parse(rawConnected) : ["b_1"];
+    if (!Array.isArray(connected)) connected = ["b_1"];
+    if (!connected.includes(fromUser.uid)) connected.push(fromUser.uid);
+    if (!connected.includes(toUser.uid)) connected.push(toUser.uid);
+    localStorage.setItem("cortex_connected_buddies_v1", JSON.stringify(connected));
+  } catch (e) {
+    console.warn("Error updating notification store on accept:", e);
+  }
+
+  // 3. Firestore update
   try {
     await setDoc(doc(db, "users", toUser.uid, "friends", fromUser.uid), {
       ...friendForRecipient,
@@ -568,6 +794,8 @@ export async function acceptFriendRequest(request: FriendRequestData): Promise<v
   } catch (err) {
     console.warn("Firestore accept request fallback:", err);
   }
+
+  notifyFriendsChanged();
 }
 
 /**
@@ -578,12 +806,33 @@ export async function declineFriendRequest(requestId: string): Promise<void> {
   const localReqs = getLocalRequests().filter((r) => r.id !== requestId);
   saveLocalRequests(localReqs);
 
+  // Sync to notifications store
+  try {
+    const rawNotifs = localStorage.getItem("cortex_notifications_v1");
+    if (rawNotifs) {
+      let notifs = JSON.parse(rawNotifs);
+      if (Array.isArray(notifs)) {
+        notifs = notifs.map((n: { id: string }) => {
+          if (n.id === `notif_${requestId}` || n.id === requestId) {
+            return { ...n, requestStatus: "declined", read: true };
+          }
+          return n;
+        });
+        localStorage.setItem("cortex_notifications_v1", JSON.stringify(notifs));
+      }
+    }
+  } catch (e) {
+    console.warn("Error updating notification store on decline:", e);
+  }
+
   // 2. Firestore update
   try {
     await deleteDoc(doc(db, "friend_requests", requestId));
   } catch (err) {
     console.warn("Firestore decline request fallback:", err);
   }
+
+  notifyFriendsChanged();
 }
 
 /**
