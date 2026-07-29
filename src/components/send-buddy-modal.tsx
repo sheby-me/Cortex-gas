@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Search, UserPlus, CheckCircle2, AtSign, Building2, Sparkles } from "lucide-react";
 import { searchNetworkUsers, cleanHandle, type NetworkUser } from "@/lib/user-network";
 import { sendBuddyRequest, isConnectedBuddy } from "@/lib/notifications-store";
-import { useAuth } from "@/hooks/use-auth";
+import { sendFriendRequest, searchUsersByUsername } from "@/lib/friends-service";
+import { useAuth, type AppRole } from "@/hooks/use-auth";
 import { toast } from "sonner";
 
 interface SendBuddyModalProps {
@@ -48,7 +49,7 @@ export function SendBuddyModal({
     setQuery(user.username);
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const rawTarget = selectedUser ? selectedUser.uid : query.trim();
     if (!rawTarget) {
       toast.error("Please enter a Unique ID or @username handle.");
@@ -57,21 +58,54 @@ export function SendBuddyModal({
 
     setSending(true);
     try {
-      const res = sendBuddyRequest({
-        targetUidOrHandle: rawTarget,
-        customNote: note,
-        senderProfile: profile,
-      });
-
-      if (res.success) {
-        toast.success(res.message);
-        onSuccess?.();
-        handleClose();
+      if (selectedUser) {
+        const targetProfile = {
+          uid: selectedUser.uid,
+          displayName: selectedUser.displayName,
+          username: selectedUser.username,
+          avatarUrl: selectedUser.avatarUrl,
+          institution: selectedUser.institution,
+          gradeLevel: selectedUser.gradeLevel,
+          role: (selectedUser.role || "student") as AppRole,
+          email: selectedUser.email || null,
+        };
+        const fsRes = await sendFriendRequest(profile, targetProfile);
+        if (!fsRes.success) {
+          toast.error(fsRes.message);
+          return;
+        }
+        toast.success(fsRes.message);
       } else {
-        toast.error(res.message);
+        // Search user by username handle in Firestore
+        const matches = await searchUsersByUsername(rawTarget, profile.uid);
+        if (matches.length > 0) {
+          const fsRes = await sendFriendRequest(profile, matches[0]);
+          if (!fsRes.success) {
+            toast.error(fsRes.message);
+            return;
+          }
+          toast.success(fsRes.message);
+        } else {
+          // Fallback to local notification store
+          const res = sendBuddyRequest({
+            targetUidOrHandle: rawTarget,
+            customNote: note,
+            senderProfile: profile,
+          });
+          if (res.success) {
+            toast.success(res.message);
+          } else {
+            toast.error(res.message);
+            return;
+          }
+        }
       }
-    } catch {
-      toast.error("Failed to send buddy request. Please try again.");
+
+      onSuccess?.();
+      handleClose();
+    } catch (err) {
+      console.error("Error sending friend request:", err);
+      toast.error("Failed to send friend request. Please check connection.");
     } finally {
       setSending(false);
     }

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -25,44 +26,57 @@ import {
   Users,
   Sparkles,
   Plus,
-  Calendar,
-  Clock,
   MessageSquare,
   Check,
   Search,
-  Send,
-  Building2,
+  UserPlus,
+  UserCheck,
+  UserX,
+  Clock,
+  X,
   GraduationCap,
   BookOpen,
-  UserPlus,
   AtSign,
+  Building2,
+  Trash2,
+  ShieldCheck,
+  Inbox,
+  Send,
 } from "lucide-react";
-import { useAuth, type GradeLevel } from "@/hooks/use-auth";
+import { useAuth, type GradeLevel, type UserProfile } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import {
-  sendBuddyRequest,
-  isConnectedBuddy,
-  hasPendingBuddyRequest,
-  NOTIFICATION_EVENT,
-} from "@/lib/notifications-store";
+  sendFriendRequest,
+  acceptFriendRequest,
+  declineFriendRequest,
+  cancelFriendRequest,
+  removeFriend,
+  subscribeIncomingRequests,
+  subscribeOutgoingRequests,
+  subscribeFriendsList,
+  searchUsersByUsername,
+  cleanUsername,
+  type FriendRequestData,
+  type FriendUserData,
+} from "@/lib/friends-service";
 import { getAllNetworkUsers, cleanHandle } from "@/lib/user-network";
 import { SendBuddyModal } from "@/components/send-buddy-modal";
 
 export const Route = createFileRoute("/_app/buddy")({
   head: () => ({
     meta: [
-      { title: "Study Buddy & Batchmates — Cortex" },
+      { title: "Friends & Study Buddies — Cortex" },
       {
         name: "description",
         content:
-          "Find university batchmates and peers preparing for the same topics or grade level.",
+          "Search users by username, send friend requests, and match with campus study buddies.",
       },
     ],
   }),
   component: BuddyPage,
 });
 
-interface BuddyItem {
+interface CampusBuddyItem {
   id: string;
   name: string;
   username?: string;
@@ -76,83 +90,32 @@ interface BuddyItem {
   match: number;
   gradeLevel?: GradeLevel | string;
   isBatchmate?: boolean;
-  requested?: boolean;
-  isConnected?: boolean;
 }
 
 export function BuddyPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const currentUid = profile?.uid || "";
 
-  const [buddyList, setBuddyList] = useState<BuddyItem[]>([]);
+  // Active Tab
+  const [activeTab, setActiveTab] = useState<"search" | "requests" | "friends" | "buddies">(
+    "search",
+  );
 
-  const loadBuddyList = useCallback(() => {
-    const networkUsers = getAllNetworkUsers();
-    const currentUid = profile?.uid || "demo_user_1";
-    const currentHandle = profile?.username || "alex_morgan";
-    const userUni = (profile?.institution || "Stanford University").toLowerCase();
+  // Real-time Firestore state
+  const [incomingRequests, setIncomingRequests] = useState<FriendRequestData[]>([]);
+  const [outgoingRequests, setOutgoingRequests] = useState<FriendRequestData[]>([]);
+  const [friendsList, setFriendsList] = useState<FriendUserData[]>([]);
 
-    const mapped: BuddyItem[] = networkUsers
-      .filter((u) => u.uid !== currentUid && cleanHandle(u.username) !== cleanHandle(currentHandle))
-      .map((u) => {
-        const connected = isConnectedBuddy(u.uid) || isConnectedBuddy(u.username);
-        const pending =
-          hasPendingBuddyRequest(currentUid, u.uid) ||
-          hasPendingBuddyRequest(currentUid, u.username);
+  // Search Screen state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [actionBusyUid, setActionBusyUid] = useState<string | null>(null);
 
-        let topic = "General Studies & Coursework";
-        if (u.learn && u.learn.length > 0) {
-          topic = `Learning: ${u.learn.join(", ")}`;
-        } else if (u.teach && u.teach.length > 0) {
-          topic = `Teaching: ${u.teach.join(", ")}`;
-        } else if (u.about) {
-          topic = u.about.length > 60 ? u.about.slice(0, 60) + "..." : u.about;
-        }
-
-        return {
-          id: u.uid,
-          name: u.displayName,
-          username: u.username,
-          avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${u.username}`,
-          uni: u.institution || "Cortex Global Network",
-          semesterOrYear: u.gradeLevel || "Semester 4",
-          degreeOrStream: u.degreeOrStream || (u.role === "tutor" ? "Verified Tutor" : "Student"),
-          tz: "UTC-5 (EST)",
-          topic,
-          exam: u.role === "tutor" ? "Expert Tutor" : "Midterms & Finals",
-          match: u.match || Math.floor(82 + (u.uid.charCodeAt(0) % 17)),
-          gradeLevel: u.gradeLevel || "Undergraduate",
-          isBatchmate: Boolean(
-            u.institution &&
-            (u.institution.toLowerCase().includes(userUni) ||
-              userUni.includes(u.institution.toLowerCase())),
-          ),
-          requested: pending,
-          isConnected: connected,
-        };
-      });
-
-    setBuddyList(mapped);
-  }, [profile]);
-
-  useEffect(() => {
-    loadBuddyList();
-    if (typeof window !== "undefined") {
-      window.addEventListener(NOTIFICATION_EVENT, loadBuddyList);
-      return () => window.removeEventListener(NOTIFICATION_EVENT, loadBuddyList);
-    }
-  }, [loadBuddyList]);
-
-  // Filter States
-  const [searchTopic, setSearchTopic] = useState("");
-  const [levelFilter, setLevelFilter] = useState("all");
-  const [uniFilter, setUniFilter] = useState("all");
-  const [tzFilter, setTzFilter] = useState("all");
-
-  // Modal States
+  // Open Study Request Modal
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
-  const [selectedTargetUser, setSelectedTargetUser] = useState<BuddyItem | null>(null);
   const [newTopic, setNewTopic] = useState("");
   const [newUni, setNewUni] = useState(profile.institution || "Stanford University");
   const [newSemester, setNewSemester] = useState(profile.semesterOrYear || "Semester 4");
@@ -160,486 +123,816 @@ export function BuddyPage() {
   const [newGrade, setNewGrade] = useState<GradeLevel>(
     (profile.gradeLevel as GradeLevel) || "Undergraduate",
   );
-  const [newExamDate, setNewExamDate] = useState("");
-  const [newTz, setNewTz] = useState(profile.timezone || "UTC-5 (EST)");
-  const [newPace, setNewPace] = useState("");
-  const [newNotes, setNewNotes] = useState("");
 
-  // Quick Message Dialog
-  const [selectedBuddyForMsg, setSelectedBuddyForMsg] = useState<BuddyItem | null>(null);
+  // Quick Message state
+  const [selectedFriendForMsg, setSelectedFriendForMsg] = useState<FriendUserData | null>(null);
   const [msgText, setMsgText] = useState("");
 
-  const handleCreateBuddyRequest = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTopic.trim()) {
-      toast.error("Please specify a study topic.");
-      return;
-    }
+  // Campus Study Buddies state
+  const [campusBuddies, setCampusBuddies] = useState<CampusBuddyItem[]>([]);
+  const [levelFilter, setLevelFilter] = useState("all");
 
-    const newBuddy: BuddyItem = {
-      id: "b_user_" + Date.now(),
-      name: `${profile.displayName || "You"} (Open Request)`,
-      avatar:
-        profile.avatarUrl ||
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-      uni: newUni.trim() || profile.institution || "Your University",
-      semesterOrYear: newSemester,
-      degreeOrStream: newDegree,
-      tz: newTz,
-      topic: newTopic.trim(),
-      exam: newExamDate.trim() || "Flexible",
-      match: 100,
-      gradeLevel: newGrade,
-      isBatchmate: true,
-      requested: false,
-    };
+  // 1. Subscribe to Real-Time Firestore Listeners
+  useEffect(() => {
+    if (!currentUid) return;
 
-    setBuddyList((prev) => [newBuddy, ...prev]);
-    setIsRequestModalOpen(false);
-    toast.success("Study buddy request posted! Peers will see your request.");
-
-    setNewTopic("");
-    setNewExamDate("");
-    setNewNotes("");
-  };
-
-  const handleToggleTeamUp = (buddy: BuddyItem) => {
-    if (buddy.isConnected) {
-      toast.info(
-        `You are already connected as Study Buddies with ${buddy.name} (@${buddy.username}).`,
-      );
-      return;
-    }
-
-    const res = sendBuddyRequest({
-      targetUidOrHandle: buddy.username || buddy.id,
-      customNote: `Hi ${buddy.name}! I'd like to team up for study sessions on ${buddy.topic}`,
-      senderProfile: profile,
+    const unsubIncoming = subscribeIncomingRequests(currentUid, (reqs) => {
+      setIncomingRequests(reqs);
     });
 
-    if (res.success) {
-      toast.success(res.message);
-    } else {
-      toast.info(res.message);
+    const unsubOutgoing = subscribeOutgoingRequests(currentUid, (reqs) => {
+      setOutgoingRequests(reqs);
+    });
+
+    const unsubFriends = subscribeFriendsList(currentUid, (friends) => {
+      setFriendsList(friends);
+    });
+
+    return () => {
+      unsubIncoming();
+      unsubOutgoing();
+      unsubFriends();
+    };
+  }, [currentUid]);
+
+  // Load campus network users
+  useEffect(() => {
+    const networkUsers = getAllNetworkUsers();
+    const mapped: CampusBuddyItem[] = networkUsers
+      .filter(
+        (u) =>
+          u.uid !== currentUid && cleanHandle(u.username) !== cleanHandle(profile.username || ""),
+      )
+      .map((u) => ({
+        id: u.uid,
+        name: u.displayName,
+        username: u.username,
+        avatar: u.avatarUrl || `https://i.pravatar.cc/150?u=${u.username}`,
+        uni: u.institution || "Cortex Global Network",
+        semesterOrYear: u.gradeLevel || "Semester 4",
+        degreeOrStream: u.degreeOrStream || (u.role === "tutor" ? "Verified Tutor" : "Student"),
+        tz: "UTC-5 (EST)",
+        topic: u.learn?.length ? `Learning: ${u.learn.join(", ")}` : u.about || "Peer Learning",
+        exam: u.role === "tutor" ? "Expert Tutor" : "Midterms & Finals",
+        match: u.match || Math.floor(85 + (u.uid.charCodeAt(0) % 12)),
+        gradeLevel: u.gradeLevel || "Undergraduate",
+        isBatchmate: Boolean(
+          u.institution &&
+          profile.institution &&
+          u.institution.toLowerCase().includes(profile.institution.toLowerCase()),
+        ),
+      }));
+    setCampusBuddies(mapped);
+  }, [currentUid, profile.username, profile.institution]);
+
+  // 2. Perform Real-time Username & Profile Search
+  const handleSearch = useCallback(
+    async (q: string) => {
+      setSearchQuery(q);
+      if (!q.trim()) {
+        setSearchResults([]);
+        return;
+      }
+      setIsSearching(true);
+      try {
+        const matches = await searchUsersByUsername(q, currentUid);
+        setSearchResults(matches);
+      } catch (err) {
+        console.error("Search failed:", err);
+      } finally {
+        setIsSearching(false);
+      }
+    },
+    [currentUid],
+  );
+
+  // Helper status checkers
+  const isFriend = useCallback(
+    (targetUid: string) => friendsList.some((f) => f.uid === targetUid),
+    [friendsList],
+  );
+
+  const getOutgoingReq = useCallback(
+    (targetUid: string) => outgoingRequests.find((r) => r.toUid === targetUid),
+    [outgoingRequests],
+  );
+
+  const getIncomingReq = useCallback(
+    (targetUid: string) => incomingRequests.find((r) => r.fromUid === targetUid),
+    [incomingRequests],
+  );
+
+  // 3. Actions: Add Friend, Accept, Decline, Cancel, Remove
+  const handleSendRequest = async (targetUser: UserProfile) => {
+    if (!profile.uid) {
+      toast.error("Please sign in to add friends.");
+      return;
     }
-    loadBuddyList();
+    setActionBusyUid(targetUser.uid);
+    try {
+      const res = await sendFriendRequest(profile, targetUser);
+      if (res.success) {
+        toast.success(res.message);
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      console.error("Error sending request:", err);
+      toast.error("Failed to send friend request.");
+    } finally {
+      setActionBusyUid(null);
+    }
+  };
+
+  const handleAcceptRequest = async (req: FriendRequestData) => {
+    setActionBusyUid(req.id);
+    try {
+      await acceptFriendRequest(req);
+      toast.success(`Accepted friend request from ${req.fromUser.displayName}!`);
+    } catch (err) {
+      console.error("Error accepting request:", err);
+      toast.error("Failed to accept friend request.");
+    } finally {
+      setActionBusyUid(null);
+    }
+  };
+
+  const handleDeclineRequest = async (reqId: string) => {
+    setActionBusyUid(reqId);
+    try {
+      await declineFriendRequest(reqId);
+      toast.info("Friend request declined.");
+    } catch (err) {
+      console.error("Error declining request:", err);
+    } finally {
+      setActionBusyUid(null);
+    }
+  };
+
+  const handleCancelRequest = async (reqId: string) => {
+    setActionBusyUid(reqId);
+    try {
+      await cancelFriendRequest(reqId);
+      toast.info("Friend request cancelled.");
+    } catch (err) {
+      console.error("Error cancelling request:", err);
+    } finally {
+      setActionBusyUid(null);
+    }
+  };
+
+  const handleRemoveFriend = async (friendUid: string, friendName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${friendName} from your friends list?`))
+      return;
+    setActionBusyUid(friendUid);
+    try {
+      await removeFriend(currentUid, friendUid);
+      toast.info(`Removed ${friendName} from friends.`);
+    } catch (err) {
+      console.error("Error removing friend:", err);
+      toast.error("Failed to remove friend.");
+    } finally {
+      setActionBusyUid(null);
+    }
   };
 
   const handleSendQuickMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!msgText.trim() || !selectedBuddyForMsg) return;
-
-    toast.success(`Message sent to ${selectedBuddyForMsg.name}!`);
-    setSelectedBuddyForMsg(null);
+    if (!msgText.trim() || !selectedFriendForMsg) return;
+    toast.success(`Message sent to ${selectedFriendForMsg.displayName}!`);
+    setSelectedFriendForMsg(null);
     setMsgText("");
     navigate({ to: "/messages" });
   };
 
-  const filteredBuddies = buddyList.filter((b) => {
-    const rawQ = searchTopic.toLowerCase().trim();
-    const q = rawQ.replace(/^@/, "");
-
-    const matchesTopic =
-      !rawQ ||
-      b.topic.toLowerCase().includes(rawQ) ||
-      b.name.toLowerCase().includes(rawQ) ||
-      (b.username && cleanHandle(b.username).includes(q)) ||
-      b.id.toLowerCase().includes(q) ||
-      b.uni.toLowerCase().includes(rawQ) ||
-      (b.degreeOrStream && b.degreeOrStream.toLowerCase().includes(rawQ));
-
-    const matchesLevel =
-      levelFilter === "all" ||
-      (b.gradeLevel && b.gradeLevel.toLowerCase() === levelFilter.toLowerCase());
-
-    const matchesUni =
-      uniFilter === "all" ||
-      (uniFilter === "batchmate" && b.isBatchmate) ||
-      (uniFilter === "same_uni" &&
-        profile.institution &&
-        b.uni.toLowerCase().includes(profile.institution.toLowerCase()));
-
-    const matchesTz = tzFilter === "all" || b.tz.toLowerCase().includes(tzFilter.toLowerCase());
-
-    return matchesTopic && matchesLevel && matchesUni && matchesTz;
-  });
-
   return (
-    <div className="p-6 md:p-8 max-w-7xl mx-auto">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="p-6 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl md:text-4xl tracking-tight font-medium">
-            Study Buddy
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="font-display text-3xl md:text-4xl tracking-tight font-bold">
+              Friends & Peer Network
+            </h1>
+            <Badge
+              variant="outline"
+              className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-xs"
+            >
+              Firestore Sync Live
+            </Badge>
+          </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Match with peers by topic, exam date, timezone and pace.
+            Search unique usernames, manage real-time friend requests, and study with verified
+            campus peers.
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2.5">
           <Button
-            onClick={() => {
-              setSelectedTargetUser(null);
-              setIsSendModalOpen(true);
-            }}
+            onClick={() => setIsSendModalOpen(true)}
             variant="outline"
             className="rounded-xl border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
           >
             <UserPlus className="h-4 w-4" />
-            Send Request by ID / @username
+            Quick Add by @username
           </Button>
           <Button
             onClick={() => setIsRequestModalOpen(true)}
             className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
           >
             <Plus className="mr-1.5 h-4 w-4" />
-            Post Open Request
+            Post Study Request
           </Button>
         </div>
       </div>
 
-      <Card className="mb-6 rounded-2xl border-border bg-gradient-mesh p-6 shadow-soft">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <Sparkles className="h-4 w-4 text-primary" />
-          AI Peer Matcher
-        </div>
-        <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-          We match you with peers studying similar course topics or preparing for exams in your time
-          window.
-        </p>
-      </Card>
+      {/* Tabs Layout */}
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "search" | "requests" | "friends" | "buddies")}
+        className="w-full"
+      >
+        <TabsList className="grid w-full grid-cols-4 rounded-2xl bg-muted/60 p-1.5">
+          <TabsTrigger value="search" className="rounded-xl text-xs md:text-sm font-medium gap-1.5">
+            <Search className="h-4 w-4" />
+            Find Users
+          </TabsTrigger>
+          <TabsTrigger
+            value="requests"
+            className="rounded-xl text-xs md:text-sm font-medium gap-1.5 relative"
+          >
+            <Inbox className="h-4 w-4" />
+            Requests
+            {incomingRequests.length > 0 && (
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground">
+                {incomingRequests.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="friends"
+            className="rounded-xl text-xs md:text-sm font-medium gap-1.5 relative"
+          >
+            <Users className="h-4 w-4" />
+            My Friends
+            {friendsList.length > 0 && (
+              <span className="ml-1 text-[11px] font-semibold text-muted-foreground">
+                ({friendsList.length})
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger
+            value="buddies"
+            className="rounded-xl text-xs md:text-sm font-medium gap-1.5"
+          >
+            <Sparkles className="h-4 w-4" />
+            Campus Matcher
+          </TabsTrigger>
+        </TabsList>
 
-      {/* Search & Filter Bar */}
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
-        <div className="relative md:col-span-1 sm:col-span-2">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={searchTopic}
-            onChange={(e) => setSearchTopic(e.target.value)}
-            placeholder="Search topic or university…"
-            className="h-10 rounded-xl pl-9"
-          />
-        </div>
+        {/* TAB 1: SEARCH USERS BY USERNAME */}
+        <TabsContent value="search" className="mt-6 space-y-6">
+          <Card className="rounded-2xl border-border bg-gradient-mesh p-6 shadow-soft">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Search className="h-4 w-4 text-primary" />
+              Discover Students & Tutors by Username
+            </div>
+            <p className="mt-1 max-w-xl text-xs md:text-sm text-muted-foreground">
+              Search for friends case-insensitively using their unique{" "}
+              <span className="font-mono text-foreground font-semibold">@username</span> handle or
+              display name.
+            </p>
+            <div className="relative mt-4 max-w-xl">
+              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+                placeholder="Type username (e.g. alex_m) or name..."
+                className="h-12 rounded-xl pl-10 pr-4 font-mono text-sm shadow-inner"
+              />
+            </div>
+          </Card>
 
-        <Select value={uniFilter} onValueChange={setUniFilter}>
-          <SelectTrigger className="h-10 rounded-xl">
-            <SelectValue placeholder="All Universities" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Peers</SelectItem>
-            <SelectItem value="batchmate">My University Batchmates</SelectItem>
-            <SelectItem value="same_uni">Same Institution</SelectItem>
-          </SelectContent>
-        </Select>
+          {/* Search Results Grid */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">
+                {searchQuery.trim()
+                  ? `Search Results for "${searchQuery}"`
+                  : "Discover Featured Learners"}
+              </h3>
+              {isSearching && (
+                <span className="text-xs text-muted-foreground animate-pulse">
+                  Searching Firestore...
+                </span>
+              )}
+            </div>
 
-        <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger className="h-10 rounded-xl">
-            <SelectValue placeholder="Academic Level" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Academic Levels</SelectItem>
-            <SelectItem value="matric">Matric</SelectItem>
-            <SelectItem value="intermediate">Intermediate</SelectItem>
-            <SelectItem value="undergraduate">Undergraduate</SelectItem>
-            <SelectItem value="graduate">Graduate</SelectItem>
-            <SelectItem value="mphil">Mphil</SelectItem>
-            <SelectItem value="phd">PhD</SelectItem>
-          </SelectContent>
-        </Select>
+            {searchResults.length === 0 && searchQuery.trim() && !isSearching ? (
+              <Card className="rounded-2xl border-dashed border-border p-8 text-center text-muted-foreground">
+                <UserX className="mx-auto h-8 w-8 text-muted-foreground/50 mb-2" />
+                <p className="text-sm font-medium text-foreground">
+                  No users found matching "@{searchQuery}"
+                </p>
+                <p className="text-xs mt-1">
+                  Make sure the username is spelled correctly or try searching by display name.
+                </p>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {(searchQuery.trim()
+                  ? searchResults
+                  : campusBuddies.map((b) => ({
+                      uid: b.id,
+                      displayName: b.name,
+                      username: b.username,
+                      avatarUrl: b.avatar,
+                      institution: b.uni,
+                      gradeLevel: b.gradeLevel as GradeLevel,
+                      role: "student" as const,
+                    }))
+                ).map((u) => {
+                  const friend = isFriend(u.uid);
+                  const outgoing = getOutgoingReq(u.uid);
+                  const incoming = getIncomingReq(u.uid);
+                  const isSelf = u.uid === currentUid;
+                  const uName = u.username || cleanHandle(u.displayName || "user");
 
-        <Select value={tzFilter} onValueChange={setTzFilter}>
-          <SelectTrigger className="h-10 rounded-xl">
-            <SelectValue placeholder="All Timezones" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Timezones</SelectItem>
-            <SelectItem value="pst">UTC+5 (PST, Pakistan Standard Time)</SelectItem>
-            <SelectItem value="utc-5">UTC-5 (EST, Eastern Standard Time)</SelectItem>
-            <SelectItem value="utc-8">UTC-8 (PST, Pacific Standard Time)</SelectItem>
-            <SelectItem value="utc+0">UTC+0 (GMT, Greenwich Mean Time)</SelectItem>
-            <SelectItem value="utc+5.5">UTC+5:30 (IST, Indian Standard Time)</SelectItem>
-            <SelectItem value="utc+8">UTC+8 (SGT, Singapore Time)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+                  return (
+                    <Card
+                      key={u.uid}
+                      className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between hover:shadow-md transition-shadow"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start gap-3">
+                          <Avatar className="h-12 w-12 border border-border">
+                            <AvatarImage
+                              src={u.avatarUrl || `https://i.pravatar.cc/150?u=${uName}`}
+                            />
+                            <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                              {(u.displayName || uName).slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-sm truncate flex items-center gap-1.5">
+                              <span className="truncate">{u.displayName || uName}</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary font-medium">
+                              @{uName}
+                            </span>
+                            <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1 truncate">
+                              <Building2 className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{u.institution || "Cortex Global"}</span>
+                            </div>
+                          </div>
+                        </div>
 
-      {/* Buddy Cards Grid */}
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {filteredBuddies.length === 0 ? (
-          <div className="col-span-full py-12 text-center text-muted-foreground">
-            No study buddies found matching your criteria. Try adjusting your search filters or post
-            a request!
-          </div>
-        ) : (
-          filteredBuddies.map((b) => (
-            <Card
-              key={b.id}
-              className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start gap-3">
-                  <Avatar className="h-14 w-14">
-                    <AvatarImage src={b.avatar} />
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                      {b.name.slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="truncate font-semibold flex items-center gap-1.5">
-                        <span className="truncate">{b.name}</span>
-                        {b.username && (
-                          <span className="font-mono text-[11px] text-primary bg-primary/10 px-1.5 py-0.2 rounded font-medium shrink-0">
-                            @{b.username}
-                          </span>
+                        {u.gradeLevel && (
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant="secondary"
+                              className="rounded-md text-[10px] font-medium"
+                            >
+                              {u.gradeLevel}
+                            </Badge>
+                          </div>
                         )}
                       </div>
-                      <Badge className="rounded-full bg-gradient-primary text-primary-foreground border-0 shrink-0 text-[10px]">
-                        {b.match}% match
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
-                      <Building2 className="h-3 w-3 shrink-0 text-primary" />
-                      <span className="truncate">{b.uni}</span>
-                    </div>
 
-                    <div className="flex items-center gap-1.5 flex-wrap mt-1">
-                      {b.isBatchmate && (
-                        <Badge
-                          variant="secondary"
-                          className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 text-[10px] rounded-md"
-                        >
-                          Batchmate
-                        </Badge>
-                      )}
-                      {b.gradeLevel && (
-                        <Badge variant="outline" className="text-[10px] rounded-md">
-                          {b.gradeLevel}
-                        </Badge>
-                      )}
-                      {b.degreeOrStream && (
-                        <span className="text-[11px] text-muted-foreground truncate">
-                          · {b.degreeOrStream}
+                      {/* Action Buttons */}
+                      <div className="mt-4 pt-3 border-t border-border flex items-center justify-end">
+                        {isSelf ? (
+                          <Badge variant="outline" className="rounded-xl text-xs py-1 px-3">
+                            You
+                          </Badge>
+                        ) : friend ? (
+                          <div className="flex items-center gap-2">
+                            <Badge className="rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 py-1 px-3 text-xs gap-1">
+                              <UserCheck className="h-3.5 w-3.5" />
+                              Friends
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                setSelectedFriendForMsg({
+                                  uid: u.uid,
+                                  displayName: u.displayName || uName,
+                                  username: uName,
+                                  avatarUrl: u.avatarUrl,
+                                  institution: u.institution,
+                                });
+                              }}
+                              className="rounded-xl h-8 px-2.5 text-xs gap-1"
+                            >
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              Message
+                            </Button>
+                          </div>
+                        ) : outgoing ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              variant="secondary"
+                              className="rounded-xl py-1 px-2.5 text-xs gap-1"
+                            >
+                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                              Request Pending
+                            </Badge>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={actionBusyUid === outgoing.id}
+                              onClick={() => handleCancelRequest(outgoing.id)}
+                              className="rounded-xl h-8 text-xs text-destructive hover:text-destructive"
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : incoming ? (
+                          <div className="flex items-center gap-1.5">
+                            <Button
+                              size="sm"
+                              disabled={actionBusyUid === incoming.id}
+                              onClick={() => handleAcceptRequest(incoming)}
+                              className="rounded-xl h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              Accept
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={actionBusyUid === incoming.id}
+                              onClick={() => handleDeclineRequest(incoming.id)}
+                              className="rounded-xl h-8 text-xs text-destructive hover:bg-destructive/10"
+                            >
+                              Decline
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            size="sm"
+                            disabled={actionBusyUid === u.uid}
+                            onClick={() => handleSendRequest(u as UserProfile)}
+                            className="rounded-xl h-8.5 px-3.5 text-xs bg-primary text-primary-foreground gap-1.5 hover:opacity-90"
+                          >
+                            <UserPlus className="h-3.5 w-3.5" />
+                            Add Friend
+                          </Button>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* TAB 2: FRIEND REQUESTS */}
+        <TabsContent value="requests" className="mt-6 space-y-6">
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* Incoming Requests */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Inbox className="h-4 w-4 text-primary" />
+                  Incoming Requests ({incomingRequests.length})
+                </h3>
+              </div>
+
+              {incomingRequests.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-border p-6 text-center text-muted-foreground">
+                  <Inbox className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+                  <p className="text-sm font-medium">No pending incoming requests</p>
+                  <p className="text-xs mt-1">
+                    When someone adds you by username, their request will appear here in real time.
+                  </p>
+                </Card>
+              ) : (
+                incomingRequests.map((req) => (
+                  <Card
+                    key={req.id}
+                    className="rounded-2xl border-border p-4 shadow-soft flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar className="h-11 w-11 border border-border">
+                        <AvatarImage
+                          src={
+                            req.fromUser.avatarUrl ||
+                            `https://i.pravatar.cc/150?u=${req.fromUser.username}`
+                          }
+                        />
+                        <AvatarFallback className="bg-primary/10 font-bold">
+                          {req.fromUser.displayName.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate">
+                          {req.fromUser.displayName}
+                        </div>
+                        <span className="font-mono text-xs text-primary">
+                          @{req.fromUser.username}
                         </span>
-                      )}
+                        {req.fromUser.institution && (
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            {req.fromUser.institution}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Button
+                        size="sm"
+                        disabled={actionBusyUid === req.id}
+                        onClick={() => handleAcceptRequest(req)}
+                        className="rounded-xl h-8 px-3 text-xs bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        Accept
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={actionBusyUid === req.id}
+                        onClick={() => handleDeclineRequest(req.id)}
+                        className="rounded-xl h-8 px-2.5 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        Decline
+                      </Button>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+
+            {/* Outgoing Requests */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                  <Send className="h-4 w-4 text-primary" />
+                  Sent Requests ({outgoingRequests.length})
+                </h3>
+              </div>
+
+              {outgoingRequests.length === 0 ? (
+                <Card className="rounded-2xl border-dashed border-border p-6 text-center text-muted-foreground">
+                  <Send className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+                  <p className="text-sm font-medium">No pending sent requests</p>
+                  <p className="text-xs mt-1">
+                    Search for peers by username to send your first friend request.
+                  </p>
+                </Card>
+              ) : (
+                outgoingRequests.map((req) => (
+                  <Card
+                    key={req.id}
+                    className="rounded-2xl border-border p-4 shadow-soft flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar className="h-11 w-11 border border-border">
+                        <AvatarImage
+                          src={
+                            req.toUser.avatarUrl ||
+                            `https://i.pravatar.cc/150?u=${req.toUser.username}`
+                          }
+                        />
+                        <AvatarFallback className="bg-primary/10 font-bold">
+                          {req.toUser.displayName.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-sm truncate">
+                          {req.toUser.displayName}
+                        </div>
+                        <span className="font-mono text-xs text-primary">
+                          @{req.toUser.username}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant="secondary" className="rounded-xl text-[11px] gap-1 py-1">
+                        <Clock className="h-3 w-3" />
+                        Pending
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={actionBusyUid === req.id}
+                        onClick={() => handleCancelRequest(req.id)}
+                        className="rounded-xl h-8 text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </Card>
+                ))
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* TAB 3: MY FRIENDS LIST */}
+        <TabsContent value="friends" className="mt-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <Users className="h-4 w-4 text-emerald-500" />
+              Connected Friends ({friendsList.length})
+            </h3>
+          </div>
+
+          {friendsList.length === 0 ? (
+            <Card className="rounded-2xl border-dashed border-border p-10 text-center text-muted-foreground">
+              <Users className="mx-auto h-10 w-10 text-muted-foreground/30 mb-3" />
+              <p className="text-base font-semibold text-foreground">
+                You don't have any friends added yet
+              </p>
+              <p className="text-xs max-w-sm mx-auto mt-1">
+                Use the <span className="font-medium text-foreground font-mono">"Find Users"</span>{" "}
+                tab to search by username and send friend requests!
+              </p>
+              <Button
+                onClick={() => setActiveTab("search")}
+                className="mt-4 rounded-xl bg-primary text-primary-foreground text-xs"
+              >
+                Search Users by Username
+              </Button>
+            </Card>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {friendsList.map((friend) => (
+                <Card
+                  key={friend.uid}
+                  className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between"
+                >
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-12 w-12 border border-border">
+                      <AvatarImage
+                        src={friend.avatarUrl || `https://i.pravatar.cc/150?u=${friend.username}`}
+                      />
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                        {friend.displayName.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm truncate">{friend.displayName}</div>
+                      <span className="font-mono text-xs text-primary font-medium">
+                        @{friend.username}
+                      </span>
+                      <div className="mt-1 text-xs text-muted-foreground flex items-center gap-1 truncate">
+                        <Building2 className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{friend.institution || "Cortex Learner"}</span>
+                      </div>
                     </div>
                   </div>
+
+                  <div className="mt-4 pt-3 border-t border-border flex items-center justify-between">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setSelectedFriendForMsg(friend)}
+                      className="rounded-xl h-8.5 text-xs gap-1.5 border-primary/20 text-primary hover:bg-primary/10"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Message
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={actionBusyUid === friend.uid}
+                      onClick={() => handleRemoveFriend(friend.uid, friend.displayName)}
+                      className="rounded-xl h-8.5 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* TAB 4: CAMPUS MATCHER */}
+        <TabsContent value="buddies" className="mt-6 space-y-4">
+          <Card className="rounded-2xl border-border bg-gradient-mesh p-6 shadow-soft">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <Sparkles className="h-4 w-4 text-primary" />
+              AI Campus Peer Matcher
+            </div>
+            <p className="mt-1 max-w-xl text-xs md:text-sm text-muted-foreground">
+              Match with study partners at your university or academic level for upcoming exams and
+              projects.
+            </p>
+          </Card>
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {campusBuddies.map((b) => (
+              <Card
+                key={b.id}
+                className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-12 w-12 border border-border">
+                      <AvatarImage src={b.avatar} />
+                      <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                        {b.name.slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="font-semibold text-sm truncate flex items-center justify-between gap-1">
+                        <span className="truncate">{b.name}</span>
+                        <Badge className="rounded-full bg-primary/10 text-primary text-[10px] shrink-0">
+                          {b.match}% match
+                        </Badge>
+                      </div>
+                      {b.username && (
+                        <span className="font-mono text-[11px] text-primary">@{b.username}</span>
+                      )}
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{b.uni}</div>
+                    </div>
+                  </div>
+                  <p className="mt-3 text-xs bg-muted/50 p-2.5 rounded-xl border border-border/50 text-muted-foreground">
+                    {b.topic}
+                  </p>
                 </div>
 
-                <div className="mt-3 rounded-xl bg-muted/50 p-3">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Users className="h-3 w-3" />
-                    Target Topic
-                  </div>
-                  <div className="mt-0.5 text-sm font-semibold">{b.topic}</div>
-                  <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      {b.exam}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      2h/day
-                    </span>
-                  </div>
+                <div className="mt-4 pt-3 border-t border-border flex items-center justify-end gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      handleSendRequest({
+                        uid: b.id,
+                        displayName: b.name,
+                        username: b.username,
+                        avatarUrl: b.avatar,
+                        institution: b.uni,
+                        role: "student" as const,
+                      } as UserProfile)
+                    }
+                    className="rounded-xl h-8.5 px-3.5 text-xs bg-primary text-primary-foreground gap-1.5"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" />
+                    Add Friend
+                  </Button>
                 </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedBuddyForMsg(b)}
-                  className="rounded-xl"
-                >
-                  <MessageSquare className="mr-1.5 h-4 w-4" /> Message
-                </Button>
-                <Button
-                  onClick={() => handleToggleTeamUp(b)}
-                  variant={b.isConnected || b.requested ? "secondary" : "default"}
-                  className={`rounded-xl transition ${
-                    b.isConnected
-                      ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/30"
-                      : b.requested
-                        ? "bg-amber-500/10 text-amber-600 border border-amber-500/30"
-                        : "bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
-                  }`}
-                >
-                  {b.isConnected ? (
-                    <>
-                      <Check className="mr-1.5 h-4 w-4 text-emerald-600" />
-                      Connected
-                    </>
-                  ) : b.requested ? (
-                    <>
-                      <Clock className="mr-1.5 h-4 w-4 text-amber-600" />
-                      Request Sent
-                    </>
-                  ) : (
-                    <>
-                      <UserPlus className="mr-1.5 h-4 w-4" />
-                      Team Up
-                    </>
-                  )}
-                </Button>
-              </div>
-            </Card>
-          ))
-        )}
-      </div>
-
-      {/* New Buddy Request Dialog */}
-      <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Post Study Buddy Request</DialogTitle>
-            <DialogDescription>
-              Specify what subject or exam you are studying for to get matched with peers.
-            </DialogDescription>
-          </DialogHeader>
-
-          <form onSubmit={handleCreateBuddyRequest} className="space-y-4 py-2">
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Study Topic / Exam *
-              </label>
-              <Input
-                value={newTopic}
-                onChange={(e) => setNewTopic(e.target.value)}
-                placeholder="e.g. Organic Chemistry II, TOEFL Prep, React 19"
-                required
-                className="rounded-xl"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Target Exam / Goal Date
-                </label>
-                <Input
-                  value={newExamDate}
-                  onChange={(e) => setNewExamDate(e.target.value)}
-                  placeholder="e.g. Nov 15"
-                  className="rounded-xl"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-muted-foreground mb-1">
-                  Timezone
-                </label>
-                <Select value={newTz} onValueChange={setNewTz}>
-                  <SelectTrigger className="rounded-xl">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="UTC+5 (PST, Pakistan Standard Time)">
-                      UTC+5 (PST, Pakistan Standard Time)
-                    </SelectItem>
-                    <SelectItem value="UTC-5 (EST)">UTC-5 (EST, Eastern)</SelectItem>
-                    <SelectItem value="UTC-8 (PST)">UTC-8 (PST, Pacific)</SelectItem>
-                    <SelectItem value="UTC+0 (GMT)">UTC+0 (GMT, London)</SelectItem>
-                    <SelectItem value="UTC+5:30 (IST)">UTC+5:30 (IST, India)</SelectItem>
-                    <SelectItem value="UTC+8 (SGT)">UTC+8 (SGT, Singapore)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Pace / Time Commitment
-              </label>
-              <Input
-                value={newPace}
-                onChange={(e) => setNewPace(e.target.value)}
-                placeholder="e.g. 1-2 hours daily in the evening"
-                className="rounded-xl"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-1">
-                Additional Goals / Notes
-              </label>
-              <Textarea
-                value={newNotes}
-                onChange={(e) => setNewNotes(e.target.value)}
-                placeholder="Describe how you'd like to collaborate (e.g. problem solving sessions, quiz practice)..."
-                rows={3}
-                className="rounded-xl"
-              />
-            </div>
-
-            <DialogFooter className="pt-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setIsRequestModalOpen(false)}
-                className="rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
-              >
-                Post Request
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+              </Card>
+            ))}
+          </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Quick Message Modal */}
-      <Dialog
-        open={!!selectedBuddyForMsg}
-        onOpenChange={(open) => !open && setSelectedBuddyForMsg(null)}
-      >
-        <DialogContent className="sm:max-w-md rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Message {selectedBuddyForMsg?.name}</DialogTitle>
-            <DialogDescription>
-              Start a direct conversation regarding {selectedBuddyForMsg?.topic}.
-            </DialogDescription>
-          </DialogHeader>
+      {selectedFriendForMsg && (
+        <Dialog
+          open={Boolean(selectedFriendForMsg)}
+          onOpenChange={(open) => !open && setSelectedFriendForMsg(null)}
+        >
+          <DialogContent className="sm:max-w-md rounded-2xl border-border bg-card p-6 shadow-elegant">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-lg font-display font-semibold">
+                <MessageSquare className="h-4.5 w-4.5 text-primary" />
+                Message {selectedFriendForMsg.displayName}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                Send a quick chat message to @{selectedFriendForMsg.username}.
+              </DialogDescription>
+            </DialogHeader>
 
-          <form onSubmit={handleSendQuickMessage} className="space-y-4 py-2">
-            <Textarea
-              value={msgText}
-              onChange={(e) => setMsgText(e.target.value)}
-              placeholder={`Hi ${selectedBuddyForMsg?.name}, I saw your focus on ${selectedBuddyForMsg?.topic}. Would love to study together!`}
-              rows={4}
-              required
-              className="rounded-xl"
-            />
+            <form onSubmit={handleSendQuickMessage} className="space-y-4">
+              <Textarea
+                value={msgText}
+                onChange={(e) => setMsgText(e.target.value)}
+                placeholder={`Hi ${selectedFriendForMsg.displayName}, want to coordinate a study session?`}
+                className="min-h-[100px] rounded-xl text-sm"
+                required
+              />
+              <DialogFooter className="gap-2 sm:gap-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setSelectedFriendForMsg(null)}
+                  className="rounded-xl text-xs"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  className="rounded-xl text-xs bg-primary text-primary-foreground gap-1.5"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Send Message
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSelectedBuddyForMsg(null)}
-                className="rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant"
-              >
-                <Send className="mr-1.5 h-4 w-4" /> Send Message
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Send Buddy Request Modal */}
-      <SendBuddyModal
-        isOpen={isSendModalOpen}
-        onClose={() => {
-          setIsSendModalOpen(false);
-          setSelectedTargetUser(null);
-        }}
-      />
+      {/* Quick Add Modal */}
+      <SendBuddyModal isOpen={isSendModalOpen} onClose={() => setIsSendModalOpen(false)} />
     </div>
   );
 }

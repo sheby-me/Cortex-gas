@@ -39,6 +39,7 @@ import { toast } from "sonner";
 import { formatAuthError, validateSignIn, validateSignUp } from "@/lib/auth-errors";
 import { useAuth } from "@/hooks/use-auth";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { checkUsernameAvailable, cleanUsername, registerUsername } from "@/lib/friends-service";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -180,6 +181,8 @@ function RoleForm({ role }: { role: Role }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameCheckMsg, setUsernameCheckMsg] = useState<string | null>(null);
   const [bio, setBio] = useState("");
   const [credentials, setCredentials] = useState("");
 
@@ -364,9 +367,30 @@ function RoleForm({ role }: { role: Role }) {
     setBusy(true);
     try {
       if (mode === "signup" && canSignup) {
+        const cleanU = cleanUsername(username);
+        if (!cleanU || cleanU.length < 3) {
+          const err =
+            "Please enter a valid username (at least 3 characters, letters/numbers/underscores only).";
+          setFormError(err);
+          toast.error(err);
+          return;
+        }
+
+        // Check if username already exists in Firestore
+        const isAvail = await checkUsernameAvailable(cleanU);
+        if (!isAvail) {
+          const err = `Username "@${cleanU}" is already taken. Please choose another username.`;
+          setFormError(err);
+          toast.error(err);
+          return;
+        }
+
         const cred = await createUserWithEmailAndPassword(auth, email, password);
         const display = name || email.split("@")[0];
         await updateProfile(cred.user, { displayName: display });
+
+        // Register unique username in usernames collection
+        await registerUsername(cred.user.uid, cleanU);
 
         const isAdminEmail = (await getDoc(doc(db, "admin_emails", email.toLowerCase()))).exists();
         const assignedRole = isAdminEmail ? "admin" : role === "tutor" ? "student" : role;
@@ -376,6 +400,8 @@ function RoleForm({ role }: { role: Role }) {
           uid: cred.user.uid,
           email,
           displayName: display,
+          username: cleanU,
+          usernameLower: cleanU,
           role: assignedRole,
           tutorStatus,
           createdAt: serverTimestamp(),
@@ -619,16 +645,62 @@ function RoleForm({ role }: { role: Role }) {
       </div>
 
       {mode === "signup" && (
-        <div>
-          <Label>Full name</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1.5 h-11 rounded-md"
-            placeholder="Your name"
-            required
-          />
-        </div>
+        <>
+          <div>
+            <Label>Full name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1.5 h-11 rounded-md"
+              placeholder="Your name"
+              required
+            />
+          </div>
+          <div>
+            <div className="flex items-center justify-between">
+              <Label>Unique Username</Label>
+              <span className="text-[10px] text-muted-foreground">
+                Required for friends & search
+              </span>
+            </div>
+            <div className="relative mt-1.5">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground font-semibold">
+                @
+              </span>
+              <Input
+                value={username}
+                onChange={async (e) => {
+                  const cleaned = cleanUsername(e.target.value);
+                  setUsername(cleaned);
+                  if (cleaned.length >= 3) {
+                    const avail = await checkUsernameAvailable(cleaned);
+                    if (!avail) {
+                      setUsernameCheckMsg(`@${cleaned} is already taken`);
+                    } else {
+                      setUsernameCheckMsg(`@${cleaned} is available!`);
+                    }
+                  } else {
+                    setUsernameCheckMsg(null);
+                  }
+                }}
+                className="h-11 pl-8 rounded-md font-mono text-sm"
+                placeholder="username (e.g. alex_m)"
+                required
+              />
+            </div>
+            {usernameCheckMsg && (
+              <p
+                className={`mt-1 text-xs font-medium ${
+                  usernameCheckMsg.includes("available")
+                    ? "text-emerald-600 dark:text-emerald-400"
+                    : "text-destructive"
+                }`}
+              >
+                {usernameCheckMsg}
+              </p>
+            )}
+          </div>
+        </>
       )}
       {mode === "signup" && role === "tutor" && (
         <>
