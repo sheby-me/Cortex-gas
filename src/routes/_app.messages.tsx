@@ -126,6 +126,16 @@ export function MsgPage() {
   const { profile } = useAuth();
 
   const [conversations, setConversations] = useState<Conversation[]>(() => {
+    try {
+      const stored = localStorage.getItem("cortex_messages_conversations_v1");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+
     const defaultChats: Conversation[] = initialMessages.map((m) => {
       let handleName = cleanHandle(m.name);
       if (m.name.includes("Aditi")) handleName = "aditi_sharma";
@@ -193,6 +203,69 @@ export function MsgPage() {
   const [inputText, setInputText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterTab, setFilterTab] = useState<"all" | "requests">("all");
+
+  // Save conversations to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("cortex_messages_conversations_v1", JSON.stringify(conversations));
+    } catch {
+      // ignore
+    }
+  }, [conversations]);
+
+  // Handle URL search parameter ?user=... or ?username=... or ?uid=...
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const targetQuery = urlParams.get("user") || urlParams.get("username") || urlParams.get("uid");
+
+    if (!targetQuery) return;
+
+    const clean = cleanHandle(targetQuery);
+    const matchedUser =
+      getUserByUsername(clean) || getUserByUid(targetQuery) || getUserByUid(clean);
+
+    const targetName = matchedUser?.displayName || targetQuery.replace(/^@/, "");
+    const targetHandle = matchedUser?.username || clean;
+    const targetAvatar =
+      matchedUser?.avatarUrl ||
+      `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(targetHandle || targetName)}`;
+
+    setConversations((prev) => {
+      const existing = prev.find(
+        (c) =>
+          c.name.toLowerCase() === targetName.toLowerCase() ||
+          (c.username && cleanHandle(c.username) === targetHandle),
+      );
+
+      if (existing) {
+        setActiveChatId(existing.id);
+        return prev;
+      }
+
+      const newId = `chat_${Date.now()}`;
+      const newChat: Conversation = {
+        id: newId,
+        name: targetName,
+        username: targetHandle,
+        avatar: targetAvatar,
+        online: true,
+        last: `Started conversation with ${targetName}`,
+        time: "Just now",
+        unread: 0,
+        status: "accepted",
+        chatHistory: [
+          {
+            me: false,
+            text: `Hi! Let's connect on Cortex.`,
+            time: "Just now",
+          },
+        ],
+      };
+      setActiveChatId(newId);
+      return [newChat, ...prev];
+    });
+  }, []);
 
   // Attachments State
   const [pendingAttachments, setPendingAttachments] = useState<Attachment[]>([]);
@@ -527,7 +600,8 @@ export function MsgPage() {
                                   </div>
                                   <div className="text-[10px] text-muted-foreground truncate">
                                     {u.role === "tutor" ? "🎓 Tutor" : "📚 Student"} ·{" "}
-                                    {u.institution} ({u.majorOrSubject})
+                                    {u.institution || "Cortex Network"}
+                                    {u.degreeOrStream ? ` (${u.degreeOrStream})` : ""}
                                   </div>
                                 </div>
                               </div>

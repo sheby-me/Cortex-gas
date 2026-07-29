@@ -4,6 +4,16 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Bell,
   Coins,
@@ -19,6 +29,8 @@ import {
   MessageSquare,
   Sparkles,
   Search,
+  Send,
+  UserCheck,
 } from "lucide-react";
 import {
   getNotifications,
@@ -27,9 +39,12 @@ import {
   deleteNotification,
   clearAllNotifications,
   respondToBuddyRequest,
+  sendBuddyRequest,
   NOTIFICATION_EVENT,
   type CortexNotification,
 } from "@/lib/notifications-store";
+import { useAuth } from "@/hooks/use-auth";
+import { searchNetworkUsers, cleanHandle, type NetworkUser } from "@/lib/user-network";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/notifications")({
@@ -54,10 +69,18 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 function NotifPage() {
+  const { profile } = useAuth();
   const [notifList, setNotifList] = useState<CortexNotification[]>([]);
   const [filter, setFilter] = useState<"all" | "requests" | "sessions" | "credits">("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Modal State
   const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+  const [modalSearch, setModalSearch] = useState("");
+  const [selectedUser, setSelectedUser] = useState<NetworkUser | null>(null);
+  const [customInput, setCustomInput] = useState("");
+  const [customNote, setCustomNote] = useState("");
+  const [isSending, setIsSending] = useState(false);
 
   // Load and subscribe to notification store
   useEffect(() => {
@@ -67,17 +90,25 @@ function NotifPage() {
 
     update();
     window.addEventListener(NOTIFICATION_EVENT, update);
-    return () => window.removeEventListener(NOTIFICATION_EVENT, update);
+    window.addEventListener("cortex_friends_changed", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener(NOTIFICATION_EVENT, update);
+      window.removeEventListener("cortex_friends_changed", update);
+      window.removeEventListener("storage", update);
+    };
   }, []);
 
   const handleMarkAllRead = () => {
     markAllNotificationsRead();
+    setNotifList(getNotifications());
     toast.success("All notifications marked as read.");
   };
 
   const handleClearAll = () => {
     if (notifList.length === 0) return;
     clearAllNotifications();
+    setNotifList([]);
     toast.success("Notification inbox cleared.");
   };
 
@@ -85,6 +116,7 @@ function NotifPage() {
     const res = respondToBuddyRequest(notifId, accept);
     if (res.success) {
       toast.success(res.message);
+      setNotifList(getNotifications());
     } else {
       toast.error(res.message);
     }
@@ -93,8 +125,40 @@ function NotifPage() {
   const handleDeleteNotif = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     deleteNotification(id);
+    setNotifList(getNotifications());
     toast.info("Notification removed.");
   };
+
+  const handleSendBuddyRequestSubmit = () => {
+    const target = selectedUser ? selectedUser.username : customInput.trim();
+    if (!target) {
+      toast.error("Please select a student or enter a valid @username handle.");
+      return;
+    }
+
+    setIsSending(true);
+    const res = sendBuddyRequest({
+      targetUidOrHandle: target,
+      customNote,
+      senderProfile: profile,
+    });
+
+    setIsSending(false);
+
+    if (res.success) {
+      toast.success(res.message);
+      setIsSendModalOpen(false);
+      setSelectedUser(null);
+      setCustomInput("");
+      setCustomNote("");
+      setModalSearch("");
+      setNotifList(getNotifications());
+    } else {
+      toast.error(res.message);
+    }
+  };
+
+  const networkResults = searchNetworkUsers(modalSearch, profile?.uid);
 
   const filteredNotifs = notifList.filter((n) => {
     // Filter tabs
@@ -438,7 +502,7 @@ function NotifPage() {
                               size="sm"
                               className="h-7 text-xs rounded-xl text-primary hover:bg-primary/10 gap-1"
                             >
-                              <Link to="/messages">
+                              <Link to={`/messages?user=${peerUser?.username || peerUser?.uid}`}>
                                 <MessageSquare className="h-3.5 w-3.5" />
                                 Send Message
                               </Link>
@@ -461,6 +525,140 @@ function NotifPage() {
           })
         )}
       </div>
+
+      {/* Send Buddy Request Modal */}
+      <Dialog open={isSendModalOpen} onOpenChange={setIsSendModalOpen}>
+        <DialogContent className="sm:max-w-lg rounded-2xl border-border bg-card p-6 shadow-2xl">
+          <DialogHeader className="space-y-1 text-left">
+            <DialogTitle className="text-lg font-bold flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-primary" />
+              Send a Study Buddy Request
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Search peers across the Cortex network by name, @username, or institution, or enter a
+              handle directly.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Search Input */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Search Students & Tutors
+              </label>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                  placeholder="Search name, @username, subject, or school…"
+                  className="pl-9 h-9 text-xs rounded-xl"
+                />
+              </div>
+            </div>
+
+            {/* Selectable Network Users List */}
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              {networkResults.length === 0 ? (
+                <div className="p-4 text-center text-xs text-muted-foreground bg-muted/30 rounded-xl">
+                  No registered users match your search. You can enter a custom handle below.
+                </div>
+              ) : (
+                networkResults.map((u) => {
+                  const isSelected = selectedUser?.uid === u.uid;
+                  return (
+                    <button
+                      key={u.uid}
+                      type="button"
+                      onClick={() => {
+                        setSelectedUser(isSelected ? null : u);
+                        if (!isSelected) setCustomInput("");
+                      }}
+                      className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition text-xs border ${
+                        isSelected
+                          ? "bg-primary/10 border-primary/40 text-primary font-medium"
+                          : "border-border/60 hover:bg-muted/60 text-foreground"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="h-8 w-8 shrink-0">
+                          <AvatarImage src={u.avatarUrl} />
+                          <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
+                            {u.displayName.slice(0, 2).toUpperCase()}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-semibold flex items-center gap-1.5">
+                            <span className="truncate">{u.displayName}</span>
+                            <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded shrink-0">
+                              @{u.username}
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-muted-foreground truncate">
+                            {u.institution || "Cortex Network"}{" "}
+                            {u.degreeOrStream ? `· ${u.degreeOrStream}` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      {isSelected && <UserCheck className="h-4 w-4 text-primary shrink-0 ml-1" />}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Custom Handle Input fallback */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Or enter custom User ID / @username handle directly
+              </label>
+              <Input
+                value={customInput}
+                onChange={(e) => {
+                  setCustomInput(e.target.value);
+                  if (e.target.value.trim()) setSelectedUser(null);
+                }}
+                placeholder="e.g. aditi_sharma or rahul_verma"
+                className="h-9 text-xs rounded-xl font-mono"
+              />
+            </div>
+
+            {/* Optional Personal Note */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-muted-foreground">
+                Custom Invitation Note (Optional)
+              </label>
+              <Textarea
+                value={customNote}
+                onChange={(e) => setCustomNote(e.target.value)}
+                placeholder="Hi! Let's team up to study Data Structures and practice coding together."
+                rows={2}
+                className="text-xs rounded-xl resize-none"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsSendModalOpen(false)}
+              className="rounded-xl text-xs"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSendBuddyRequestSubmit}
+              disabled={isSending || (!selectedUser && !customInput.trim())}
+              className="rounded-xl text-xs bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 gap-1.5"
+            >
+              <Send className="h-3.5 w-3.5" />
+              {isSending ? "Sending..." : "Send Request"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

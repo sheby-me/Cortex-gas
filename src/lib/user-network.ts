@@ -1,3 +1,6 @@
+import { collection, onSnapshot } from "firebase/firestore";
+import { db } from "@/integrations/firebase/client";
+
 export interface NetworkUser {
   uid: string;
   username: string; // clean handle without @, e.g. "alex_morgan"
@@ -379,4 +382,40 @@ export function getUserByUsername(handle: string): NetworkUser | undefined {
 /** Find network user by UID */
 export function getUserByUid(uid: string): NetworkUser | undefined {
   return getAllNetworkUsers().find((u) => u.uid === uid);
+}
+
+// Sync Firestore users collection automatically if available
+if (typeof window !== "undefined") {
+  try {
+    onSnapshot(
+      collection(db, "users"),
+      (snapshot) => {
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data && docSnap.id) {
+            registerOrUpdateNetworkUser({
+              uid: docSnap.id,
+              displayName: data.displayName || "Cortex Learner",
+              username: data.username
+                ? cleanHandle(data.username)
+                : `user_${docSnap.id.slice(0, 6)}`,
+              role: (data.role as "student" | "tutor" | "admin") || "student",
+              avatarUrl: data.avatarUrl || `https://i.pravatar.cc/150?u=${docSnap.id}`,
+              institution: data.institution || "Cortex Network",
+              gradeLevel: data.gradeLevel,
+              degreeOrStream: data.degreeOrStream,
+              about: data.about,
+              teach: data.teach,
+              learn: data.learn,
+            });
+          }
+        });
+      },
+      (err) => {
+        console.warn("Firestore user network sync fallback:", err);
+      },
+    );
+  } catch (err) {
+    console.warn("Error initializing network Firestore listener:", err);
+  }
 }
