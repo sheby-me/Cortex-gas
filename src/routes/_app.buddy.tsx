@@ -16,13 +16,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Users,
   Sparkles,
   Plus,
@@ -33,13 +26,8 @@ import {
   UserCheck,
   UserX,
   Clock,
-  X,
-  GraduationCap,
-  BookOpen,
-  AtSign,
   Building2,
   Trash2,
-  ShieldCheck,
   Inbox,
   Send,
 } from "lucide-react";
@@ -55,12 +43,10 @@ import {
   subscribeOutgoingRequests,
   subscribeFriendsList,
   searchUsersByUsername,
-  cleanUsername,
   type FriendRequestData,
   type FriendUserData,
 } from "@/lib/friends-service";
-import { getAllNetworkUsers, cleanHandle } from "@/lib/user-network";
-import { SendBuddyModal } from "@/components/send-buddy-modal";
+import { getAllNetworkUsers, cleanHandle, searchNetworkUsers } from "@/lib/user-network";
 
 export const Route = createFileRoute("/_app/buddy")({
   head: () => ({
@@ -95,14 +81,14 @@ interface CampusBuddyItem {
 export function BuddyPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const currentUid = profile?.uid || "";
+  const currentUid = profile?.uid || "demo_user_1";
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<"search" | "requests" | "friends" | "buddies">(
     "search",
   );
 
-  // Real-time Firestore state
+  // Real-time Firestore & Local State
   const [incomingRequests, setIncomingRequests] = useState<FriendRequestData[]>([]);
   const [outgoingRequests, setOutgoingRequests] = useState<FriendRequestData[]>([]);
   const [friendsList, setFriendsList] = useState<FriendUserData[]>([]);
@@ -113,26 +99,14 @@ export function BuddyPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [actionBusyUid, setActionBusyUid] = useState<string | null>(null);
 
-  // Open Study Request Modal
-  const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-  const [isSendModalOpen, setIsSendModalOpen] = useState(false);
-  const [newTopic, setNewTopic] = useState("");
-  const [newUni, setNewUni] = useState(profile.institution || "Stanford University");
-  const [newSemester, setNewSemester] = useState(profile.semesterOrYear || "Semester 4");
-  const [newDegree, setNewDegree] = useState(profile.degreeOrStream || "BS Computer Science");
-  const [newGrade, setNewGrade] = useState<GradeLevel>(
-    (profile.gradeLevel as GradeLevel) || "Undergraduate",
-  );
-
   // Quick Message state
   const [selectedFriendForMsg, setSelectedFriendForMsg] = useState<FriendUserData | null>(null);
   const [msgText, setMsgText] = useState("");
 
   // Campus Study Buddies state
   const [campusBuddies, setCampusBuddies] = useState<CampusBuddyItem[]>([]);
-  const [levelFilter, setLevelFilter] = useState("all");
 
-  // 1. Subscribe to Real-Time Firestore Listeners
+  // 1. Subscribe to Real-Time Listeners
   useEffect(() => {
     if (!currentUid) return;
 
@@ -185,7 +159,7 @@ export function BuddyPage() {
     setCampusBuddies(mapped);
   }, [currentUid, profile.username, profile.institution]);
 
-  // 2. Perform Real-time Username & Profile Search
+  // 2. Perform Real-time Search
   const handleSearch = useCallback(
     async (q: string) => {
       setSearchQuery(q);
@@ -196,7 +170,21 @@ export function BuddyPage() {
       setIsSearching(true);
       try {
         const matches = await searchUsersByUsername(q, currentUid);
-        setSearchResults(matches);
+        const netMatches = searchNetworkUsers(q, currentUid).map((u) => ({
+          uid: u.uid,
+          displayName: u.displayName,
+          username: u.username,
+          avatarUrl: u.avatarUrl,
+          institution: u.institution,
+          gradeLevel: u.gradeLevel as GradeLevel,
+          role: u.role as UserProfile["role"],
+        }));
+
+        const map = new Map<string, UserProfile>();
+        netMatches.forEach((u) => map.set(u.uid, u as UserProfile));
+        matches.forEach((u) => map.set(u.uid, u));
+
+        setSearchResults(Array.from(map.values()));
       } catch (err) {
         console.error("Search failed:", err);
       } finally {
@@ -223,14 +211,17 @@ export function BuddyPage() {
   );
 
   // 3. Actions: Add Friend, Accept, Decline, Cancel, Remove
-  const handleSendRequest = async (targetUser: UserProfile) => {
-    if (!profile.uid) {
-      toast.error("Please sign in to add friends.");
+  const handleSendRequest = async (targetUser: Partial<UserProfile>) => {
+    const sender = profile.uid
+      ? profile
+      : { ...profile, uid: "demo_user_1", username: "alex_morgan", displayName: "Alex Morgan" };
+    if (!targetUser.uid) {
+      toast.error("Invalid user target.");
       return;
     }
     setActionBusyUid(targetUser.uid);
     try {
-      const res = await sendFriendRequest(profile, targetUser);
+      const res = await sendFriendRequest(sender, targetUser);
       if (res.success) {
         toast.success(res.message);
       } else {
@@ -314,34 +305,11 @@ export function BuddyPage() {
             <h1 className="font-display text-3xl md:text-4xl tracking-tight font-bold">
               Friends & Peer Network
             </h1>
-            <Badge
-              variant="outline"
-              className="rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 text-xs"
-            >
-              Firestore Sync Live
-            </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Search unique usernames, manage real-time friend requests, and study with verified
             campus peers.
           </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <Button
-            onClick={() => setIsSendModalOpen(true)}
-            variant="outline"
-            className="rounded-xl border-primary/30 text-primary hover:bg-primary/10 gap-1.5"
-          >
-            <UserPlus className="h-4 w-4" />
-            Quick Add by @username
-          </Button>
-          <Button
-            onClick={() => setIsRequestModalOpen(true)}
-            className="rounded-xl bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90"
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            Post Study Request
-          </Button>
         </div>
       </div>
 
@@ -396,17 +364,12 @@ export function BuddyPage() {
               <Search className="h-4 w-4 text-primary" />
               Discover Students & Tutors by Username
             </div>
-            <p className="mt-1 max-w-xl text-xs md:text-sm text-muted-foreground">
-              Search for friends case-insensitively using their unique{" "}
-              <span className="font-mono text-foreground font-semibold">@username</span> handle or
-              display name.
-            </p>
             <div className="relative mt-4 max-w-xl">
               <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={searchQuery}
                 onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Type username (e.g. alex_m) or name..."
+                placeholder="Type username (e.g. alex_morgan) or name..."
                 className="h-12 rounded-xl pl-10 pr-4 font-mono text-sm shadow-inner"
               />
             </div>
@@ -422,7 +385,7 @@ export function BuddyPage() {
               </h3>
               {isSearching && (
                 <span className="text-xs text-muted-foreground animate-pulse">
-                  Searching Firestore...
+                  Searching Network...
                 </span>
               )}
             </div>
@@ -605,7 +568,7 @@ export function BuddyPage() {
                   <Inbox className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
                   <p className="text-sm font-medium">No pending incoming requests</p>
                   <p className="text-xs mt-1">
-                    When someone adds you by username, their request will appear here in real time.
+                    When someone sends you a request, it will appear here in real time.
                   </p>
                 </Card>
               ) : (
@@ -828,58 +791,133 @@ export function BuddyPage() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {campusBuddies.map((b) => (
-              <Card
-                key={b.id}
-                className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start gap-3">
-                    <Avatar className="h-12 w-12 border border-border">
-                      <AvatarImage src={b.avatar} />
-                      <AvatarFallback className="bg-primary/10 text-primary font-bold">
-                        {b.name.slice(0, 2).toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <div className="font-semibold text-sm truncate flex items-center justify-between gap-1">
-                        <span className="truncate">{b.name}</span>
-                        <Badge className="rounded-full bg-primary/10 text-primary text-[10px] shrink-0">
-                          {b.match}% match
-                        </Badge>
-                      </div>
-                      {b.username && (
-                        <span className="font-mono text-[11px] text-primary">@{b.username}</span>
-                      )}
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{b.uni}</div>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-xs bg-muted/50 p-2.5 rounded-xl border border-border/50 text-muted-foreground">
-                    {b.topic}
-                  </p>
-                </div>
+            {campusBuddies.map((b) => {
+              const friend = isFriend(b.id);
+              const outgoing = getOutgoingReq(b.id);
+              const incoming = getIncomingReq(b.id);
+              const isSelf = b.id === currentUid;
 
-                <div className="mt-4 pt-3 border-t border-border flex items-center justify-end gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      handleSendRequest({
-                        uid: b.id,
-                        displayName: b.name,
-                        username: b.username,
-                        avatarUrl: b.avatar,
-                        institution: b.uni,
-                        role: "student" as const,
-                      } as UserProfile)
-                    }
-                    className="rounded-xl h-8.5 px-3.5 text-xs bg-primary text-primary-foreground gap-1.5"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" />
-                    Add Friend
-                  </Button>
-                </div>
-              </Card>
-            ))}
+              return (
+                <Card
+                  key={b.id}
+                  className="rounded-2xl border-border p-5 shadow-soft flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start gap-3">
+                      <Avatar className="h-12 w-12 border border-border">
+                        <AvatarImage src={b.avatar} />
+                        <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                          {b.name.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold text-sm truncate flex items-center justify-between gap-1">
+                          <span className="truncate">{b.name}</span>
+                          <Badge className="rounded-full bg-primary/10 text-primary text-[10px] shrink-0">
+                            {b.match}% match
+                          </Badge>
+                        </div>
+                        {b.username && (
+                          <span className="font-mono text-[11px] text-primary">@{b.username}</span>
+                        )}
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">{b.uni}</div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs bg-muted/50 p-2.5 rounded-xl border border-border/50 text-muted-foreground">
+                      {b.topic}
+                    </p>
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-border flex items-center justify-end gap-2">
+                    {isSelf ? (
+                      <Badge variant="outline" className="rounded-xl text-xs py-1 px-3">
+                        You
+                      </Badge>
+                    ) : friend ? (
+                      <div className="flex items-center gap-2">
+                        <Badge className="rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 py-1 px-3 text-xs gap-1">
+                          <UserCheck className="h-3.5 w-3.5" />
+                          Friends
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedFriendForMsg({
+                              uid: b.id,
+                              displayName: b.name,
+                              username: b.username || cleanHandle(b.name),
+                              avatarUrl: b.avatar,
+                              institution: b.uni,
+                            });
+                          }}
+                          className="rounded-xl h-8 px-2.5 text-xs gap-1"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Message
+                        </Button>
+                      </div>
+                    ) : outgoing ? (
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="secondary" className="rounded-xl py-1 px-2.5 text-xs gap-1">
+                          <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          Request Pending
+                        </Badge>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={actionBusyUid === outgoing.id}
+                          onClick={() => handleCancelRequest(outgoing.id)}
+                          className="rounded-xl h-8 text-xs text-destructive hover:text-destructive"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : incoming ? (
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          disabled={actionBusyUid === incoming.id}
+                          onClick={() => handleAcceptRequest(incoming)}
+                          className="rounded-xl h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-700 gap-1"
+                        >
+                          <Check className="h-3.5 w-3.5" />
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={actionBusyUid === incoming.id}
+                          onClick={() => handleDeclineRequest(incoming.id)}
+                          className="rounded-xl h-8 text-xs text-destructive hover:bg-destructive/10"
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        size="sm"
+                        disabled={actionBusyUid === b.id}
+                        onClick={() =>
+                          handleSendRequest({
+                            uid: b.id,
+                            displayName: b.name,
+                            username: b.username,
+                            avatarUrl: b.avatar,
+                            institution: b.uni,
+                            role: "student" as const,
+                          } as UserProfile)
+                        }
+                        className="rounded-xl h-8.5 px-3.5 text-xs bg-primary text-primary-foreground gap-1.5"
+                      >
+                        <UserPlus className="h-3.5 w-3.5" />
+                        Add Friend
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </TabsContent>
       </Tabs>
@@ -930,9 +968,6 @@ export function BuddyPage() {
           </DialogContent>
         </Dialog>
       )}
-
-      {/* Quick Add Modal */}
-      <SendBuddyModal isOpen={isSendModalOpen} onClose={() => setIsSendModalOpen(false)} />
     </div>
   );
 }

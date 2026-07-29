@@ -30,7 +30,6 @@ import {
   NOTIFICATION_EVENT,
   type CortexNotification,
 } from "@/lib/notifications-store";
-import { SendBuddyModal } from "@/components/send-buddy-modal";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/notifications")({
@@ -157,13 +156,12 @@ function NotifPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <Button
-            onClick={() => setIsSendModalOpen(true)}
-            className="rounded-xl text-xs bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 gap-1.5"
-          >
-            <UserPlus className="h-4 w-4" />
-            Send Buddy Request
-          </Button>
+          <Link to="/buddy">
+            <Button className="rounded-xl text-xs bg-gradient-primary text-primary-foreground shadow-elegant hover:opacity-90 gap-1.5">
+              <UserPlus className="h-4 w-4" />
+              Find Friends
+            </Button>
+          </Link>
 
           {unreadCount > 0 && (
             <Button
@@ -463,13 +461,6 @@ function NotifPage() {
           })
         )}
       </div>
-
-      {/* Send Buddy Request Modal */}
-      <SendBuddyModal
-        isOpen={isSendModalOpen}
-        onClose={() => setIsSendModalOpen(false)}
-        onSuccess={() => setNotifList(getNotifications())}
-      />
     </div>
   );
 }
